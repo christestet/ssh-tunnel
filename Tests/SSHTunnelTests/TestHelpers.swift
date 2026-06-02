@@ -186,6 +186,9 @@ final class StubForwardHealthChecker: ForwardHealthChecking, @unchecked Sendable
 final class StubSSHMasterClient: SSHMasterClienting, @unchecked Sendable {
     var resolvedOptions: [SSHHostOptions?] = []
     var checkResults: [SSHResult] = []
+    /// When non-empty, each `addForward` dequeues one result; lets a test model
+    /// a forward that fails to establish. Defaults to exit 0 when empty.
+    var addForwardResults: [SSHResult] = []
     var startMasterError: Error?
     var masterFactory: (@Sendable () -> FakeLongRunning) = { FakeLongRunning() }
 
@@ -229,7 +232,10 @@ final class StubSSHMasterClient: SSHMasterClienting, @unchecked Sendable {
 
     func addForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult {
         addForwardCalls.append((remotePort, localPort, target, controlPath))
-        return SSHResult(exitCode: 0, stdout: "", stderr: "")
+        if addForwardResults.isEmpty {
+            return SSHResult(exitCode: 0, stdout: "", stderr: "")
+        }
+        return addForwardResults.removeFirst()
     }
 
     func removeForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult {
@@ -245,24 +251,26 @@ final class SpyTunnelNotifier: TunnelNotifying {
         let detail: String
     }
 
+    /// The real notifier now requests authorization lazily as part of
+    /// delivering a notification (rather than per-controller at init), so this
+    /// flips the first time any notification is sent.
     private(set) var didRequestAuthorization = false
     private(set) var interruptedHosts: [String] = []
     private(set) var failedResults: [CheckResult] = []
     private(set) var checkResults: [CheckResult] = []
 
-    func requestAuthorization() {
-        didRequestAuthorization = true
-    }
-
     func sendTunnelInterruptedNotification(for settings: TunnelSettings) {
+        didRequestAuthorization = true
         interruptedHosts.append(settings.hostAlias)
     }
 
     func sendTunnelFailedNotification(for settings: TunnelSettings, detail: String) {
+        didRequestAuthorization = true
         failedResults.append(CheckResult(host: settings.hostAlias, ok: false, detail: detail))
     }
 
     func sendCheckResultNotification(for settings: TunnelSettings, ok: Bool, detail: String) {
+        didRequestAuthorization = true
         checkResults.append(CheckResult(host: settings.hostAlias, ok: ok, detail: detail))
     }
 }

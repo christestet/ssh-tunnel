@@ -12,17 +12,20 @@ let package = Package(
     targets: [
         .target(
             name: "SSHTunnelKit",
-            path: "Sources/SSHTunnelKit"
+            path: "Sources/SSHTunnelKit",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .executableTarget(
             name: "SSHTunnel",
             dependencies: ["SSHTunnelKit"],
-            path: "Sources/SSHTunnel"
+            path: "Sources/SSHTunnel",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "SSHTunnelTests",
             dependencies: ["SSHTunnelKit"],
-            path: "Tests/SSHTunnelTests"
+            path: "Tests/SSHTunnelTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )

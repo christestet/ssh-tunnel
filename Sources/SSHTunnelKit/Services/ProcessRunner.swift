@@ -15,6 +15,12 @@ struct ProcessExecution: Sendable {
 ///
 /// Replaces the four near-identical race-vs-timeout loops we used to have in
 /// `ProcessSSHRunner.run`, `LocalPortAvailabilityChecker.runCapturing`, etc.
+///
+/// stdout/stderr are drained *concurrently* while the process runs (see
+/// `ProcessBox.beginDraining`). Reading only inside `terminationHandler`
+/// deadlocks any child that writes more than the ~64 KiB OS pipe buffer
+/// (e.g. `ssh -G` on a large config, or `lsof -p`): the child blocks on
+/// `write()`, so it never exits, so the termination handler never fires.
 func runProcess(
     executable: URL,
     arguments: [String],
@@ -33,17 +39,21 @@ func runProcess(
         group.addTask {
             await withCheckedContinuation { (cont: CheckedContinuation<ProcessExecution, Never>) in
                 box.process.terminationHandler = { proc in
-                    let outData = (try? box.stdout.fileHandleForReading.readToEnd()) ?? Data()
-                    let errData = (try? box.stderr.fileHandleForReading.readToEnd()) ?? Data()
+                    let output = box.finishDraining()
                     cont.resume(returning: ProcessExecution(
                         exitCode: proc.terminationStatus,
-                        stdout: String(data: outData, encoding: .utf8) ?? "",
-                        stderr: String(data: errData, encoding: .utf8) ?? ""
+                        stdout: output.stdout,
+                        stderr: output.stderr
                     ))
                 }
                 do {
+                    box.beginDraining()
                     try box.process.run()
                 } catch {
+                    // run() threw: no child was spawned, so the write ends of
+                    // the pipes are still open in this process and `readToEnd()`
+                    // would block forever. Just stop draining and report.
+                    box.cancelDraining()
                     cont.resume(returning: ProcessExecution(
                         exitCode: ProcessExecution.spawnFailedExitCode,
                         stdout: "",
@@ -72,10 +82,15 @@ func runProcess(
                     kill(box.process.processIdentifier, SIGKILL)
                 }
             }
+            // Hand back whatever we managed to drain before the timeout so the
+            // failure is at least diagnosable, alongside the timeout marker.
+            let partial = box.bufferedOutput()
+            let note = "process timed out after \(Int(timeout))s"
+            let stderr = partial.stderr.isEmpty ? note : "\(partial.stderr)\n(\(note))"
             return ProcessExecution(
                 exitCode: ProcessExecution.timeoutExitCode,
-                stdout: "",
-                stderr: "process timed out after \(Int(timeout))s"
+                stdout: partial.stdout,
+                stderr: stderr
             )
         }
         // Take the first *real* result. A nil means the timeout task observed
@@ -108,9 +123,24 @@ func runProcessSynchronously(
     process.standardOutput = stdoutPipe
     process.standardError = stderrPipe
 
+    // Drain concurrently on Foundation's internal queue so the child never
+    // blocks on a full pipe while this thread is polling `isRunning`.
+    let outBuffer = OutputBuffer()
+    let errBuffer = OutputBuffer()
+    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+        let chunk = handle.availableData
+        if chunk.isEmpty { handle.readabilityHandler = nil } else { outBuffer.append(chunk) }
+    }
+    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+        let chunk = handle.availableData
+        if chunk.isEmpty { handle.readabilityHandler = nil } else { errBuffer.append(chunk) }
+    }
+
     do {
         try process.run()
     } catch {
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
         return ProcessExecution(
             exitCode: ProcessExecution.spawnFailedExitCode,
             stdout: "",
@@ -132,19 +162,25 @@ func runProcessSynchronously(
             kill(process.processIdentifier, SIGKILL)
             process.waitUntilExit()
         }
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
         return ProcessExecution(
             exitCode: ProcessExecution.timeoutExitCode,
-            stdout: "",
+            stdout: outBuffer.string(),
             stderr: "process timed out after \(Int(timeout))s"
         )
     }
 
-    let outData = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
-    let errData = (try? stderrPipe.fileHandleForReading.readToEnd()) ?? Data()
+    // Process exited normally: stop draining and pick up any final bytes the
+    // termination raced ahead of.
+    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+    stderrPipe.fileHandleForReading.readabilityHandler = nil
+    if let rest = try? stdoutPipe.fileHandleForReading.readToEnd() { outBuffer.append(rest) }
+    if let rest = try? stderrPipe.fileHandleForReading.readToEnd() { errBuffer.append(rest) }
     return ProcessExecution(
         exitCode: process.terminationStatus,
-        stdout: String(data: outData, encoding: .utf8) ?? "",
-        stderr: String(data: errData, encoding: .utf8) ?? ""
+        stdout: outBuffer.string(),
+        stderr: errBuffer.string()
     )
 }
 
@@ -220,14 +256,68 @@ private final class TimeoutRace<T: Sendable>: @unchecked Sendable {
 
 /// Confines the `@unchecked Sendable` shortcut for Foundation's non-Sendable
 /// `Process`/`Pipe` types to one small object shared by the race branches.
+/// Output is accumulated into `Mutex`-guarded buffers as it arrives.
 private final class ProcessBox: @unchecked Sendable {
     let process: Process
     let stdout: Pipe
     let stderr: Pipe
+    private let outBuffer = OutputBuffer()
+    private let errBuffer = OutputBuffer()
 
     init(process: Process, stdout: Pipe, stderr: Pipe) {
         self.process = process
         self.stdout = stdout
         self.stderr = stderr
+    }
+
+    /// Start draining both pipes as data arrives, so a chatty child never
+    /// blocks on a full pipe waiting for us to read.
+    func beginDraining() {
+        let out = outBuffer
+        stdout.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { out.append(chunk) }
+        }
+        let err = errBuffer
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { err.append(chunk) }
+        }
+    }
+
+    /// Stop draining without reading — used on spawn failure where the write
+    /// ends are still open and `readToEnd()` would block.
+    func cancelDraining() {
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+    }
+
+    /// Stop draining and capture anything still buffered. Safe once the process
+    /// has exited: the write ends are closed, so the final read returns EOF.
+    func finishDraining() -> (stdout: String, stderr: String) {
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        if let rest = try? stdout.fileHandleForReading.readToEnd() { outBuffer.append(rest) }
+        if let rest = try? stderr.fileHandleForReading.readToEnd() { errBuffer.append(rest) }
+        return (outBuffer.string(), errBuffer.string())
+    }
+
+    /// A snapshot of what has been drained so far, without stopping draining.
+    func bufferedOutput() -> (stdout: String, stderr: String) {
+        (outBuffer.string(), errBuffer.string())
+    }
+}
+
+/// Thread-safe accumulator for subprocess output. `Mutex` confines the only
+/// mutable state so the surrounding `@unchecked Sendable` box stays honest.
+private final class OutputBuffer: Sendable {
+    private let storage = Mutex<Data>(Data())
+
+    func append(_ chunk: Data) {
+        storage.withLock { $0.append(chunk) }
+    }
+
+    func string() -> String {
+        storage.withLock { String(data: $0, encoding: .utf8) ?? "" }
     }
 }
