@@ -79,7 +79,13 @@ enum HelpContent {
         HelpSection(
             title: "Menu Rows",
             body: """
-            Each tunnel row has an Active switch, Start at Login switch, Add Quick Forward button, and Check Now button. The row also shows the latest error when a start, check, or reconnect fails. The bottom action bar adds tunnels, copies the debug log, opens Settings or Help, and quits the app. State colors include Connected, Connecting, Reconnecting, Failed, and Idle (disconnected).
+            Each tunnel row has an Active switch, Start at Login switch, Add Quick Forward button, and Check Now button. The row also shows the latest error when a start, check, or reconnect fails. The bottom action bar adds tunnels, checks for updates, copies the debug log, opens Settings or Help, and quits the app. State colors include Connected, Connecting, Reconnecting, Failed, and Idle (disconnected).
+            """
+        ),
+        HelpSection(
+            title: "Updates",
+            body: """
+            SSH Tunnel checks GitHub Releases for a newer version automatically — at most once every 24 hours — and on demand with the Check for Updates button in the action bar. When a newer release is available, an Update available banner appears at the top of the menu and a notification is posted; both open the release page so you can download the new DMG and drag it to Applications. Because the app is not notarized, updates are installed manually and there is no silent self-update. Turn automatic checks on or off in the About & Updates popover, opened from the info button in the settings sidebar footer.
             """
         ),
         HelpSection(
