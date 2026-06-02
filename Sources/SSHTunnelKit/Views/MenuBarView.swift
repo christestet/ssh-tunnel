@@ -8,8 +8,6 @@ import SwiftUI
 public struct MenuBarView: View {
     @Bindable var manager: TunnelManager
     let updateChecker: UpdateChecker
-    @State private var isCheckingForUpdates = false
-    @State private var updateCheckMessage: String?
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
@@ -28,31 +26,10 @@ public struct MenuBarView: View {
             Divider()
             tunnelList
             Divider()
-            if let updateCheckMessage {
-                manualCheckFeedback(updateCheckMessage)
-            }
             actionBar
         }
         .frame(width: Constants.menuBarPanelWidth)
         .frame(minHeight: Constants.menuBarPanelMinHeight)
-    }
-
-    /// Transient result of a manual menu-bar update check for the cases the
-    /// banner doesn't cover (already up to date, or a check error).
-    private func manualCheckFeedback(_ message: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: updateChecker.lastErrorMessage == nil
-                ? "checkmark.circle"
-                : "exclamationmark.triangle")
-                .foregroundStyle(updateChecker.lastErrorMessage == nil ? .secondary : .orange)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
 
     /// Surfaces a newer GitHub release. Tapping opens the release page (notes +
@@ -173,10 +150,13 @@ public struct MenuBarView: View {
         .padding(.vertical, 24)
     }
 
-    /// Floating action bar at the bottom of the menu popover. The buttons
-    /// share a `GlassEffectContainer` so their `.buttonStyle(.glass)` chips
-    /// blend their refractions instead of stacking like flat tiles
-    /// (mirrors `Landmarks/Views/Badges/BadgesView.swift`).
+    /// Floating action bar at the bottom of the menu popover. Following
+    /// progressive disclosure, only the two immediate-use actions — Add Tunnel
+    /// and Settings — are single-tap chips; everything secondary (Help, Copy
+    /// Debug Log, Quit) lives behind a standard overflow menu. Manual update
+    /// checks intentionally live only in Settings → About & Updates, not here.
+    /// The chips share a `GlassEffectContainer` so their `.buttonStyle(.glass)`
+    /// refractions blend instead of stacking like flat tiles.
     private var actionBar: some View {
         GlassEffectContainer(spacing: 6) {
             HStack(spacing: 6) {
@@ -184,7 +164,7 @@ public struct MenuBarView: View {
                     _ = manager.addTunnelForEditing()
                     openSettingsWindow()
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    Label("Add Tunnel", systemImage: "plus")
                 }
                 .help("Add Tunnel")
                 .accessibilityLabel("Add Tunnel")
@@ -192,50 +172,38 @@ public struct MenuBarView: View {
                 Spacer()
 
                 Button {
-                    checkForUpdates()
-                } label: {
-                    if isCheckingForUpdates {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(isCheckingForUpdates)
-                .help("Check for Updates")
-                .accessibilityLabel("Check for Updates")
-
-                Button {
-                    copyDebugLog()
-                } label: {
-                    Label("Copy Debug Log", systemImage: "doc.on.clipboard")
-                }
-                .help("Copy debug log and reveal log file")
-
-                Button {
                     openSettingsWindow()
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: .command)
-                .help("Open settings")
+                .help("Settings")
+                .accessibilityLabel("Settings")
 
-                Button {
-                    openWindow(id: HelpScene.windowID)
-                    NSApp.activate()
-                } label: {
-                    Label("Help", systemImage: "questionmark.circle")
-                }
-                .keyboardShortcut("?", modifiers: [.command, .shift])
-                .help("How to use SSH Tunnel")
+                Menu {
+                    Button("Copy Debug Log", systemImage: "doc.on.clipboard") {
+                        copyDebugLog()
+                    }
+                    Button("How to Use SSH Tunnel", systemImage: "questionmark.circle") {
+                        openWindow(id: HelpScene.windowID)
+                        NSApp.activate()
+                    }
+                    .keyboardShortcut("?", modifiers: [.command, .shift])
 
-                Button(role: .destructive) {
-                    NSApplication.shared.terminate(nil)
+                    Divider()
+
+                    Button(role: .destructive) {
+                        NSApplication.shared.terminate(nil)
+                    } label: {
+                        Label("Quit SSH Tunnel", systemImage: "power")
+                    }
+                    .keyboardShortcut("q", modifiers: .command)
                 } label: {
-                    Label("Quit", systemImage: "power")
+                    Label("More", systemImage: "ellipsis")
                 }
-                .keyboardShortcut("q", modifiers: .command)
-                .help("Quit SSH Tunnel")
+                .menuIndicator(.hidden)
+                .help("More")
+                .accessibilityLabel("More options")
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.glass)
@@ -249,23 +217,6 @@ public struct MenuBarView: View {
     private func openSettingsWindow() {
         openSettings()
         NSApp.activate()
-    }
-
-    private func checkForUpdates() {
-        Task {
-            isCheckingForUpdates = true
-            updateCheckMessage = nil
-            await updateChecker.checkForUpdates()
-            isCheckingForUpdates = false
-
-            // When a newer release exists the banner already surfaces it; only
-            // give transient feedback for the otherwise-silent outcomes.
-            guard updateChecker.availableUpdate == nil else { return }
-            let message = updateChecker.lastErrorMessage ?? "You're up to date."
-            updateCheckMessage = message
-            try? await Task.sleep(for: .seconds(4))
-            if updateCheckMessage == message { updateCheckMessage = nil }
-        }
     }
 
     /// Copies the recent in-memory debug log to the clipboard so the user can

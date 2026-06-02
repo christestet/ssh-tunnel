@@ -15,7 +15,7 @@ final class HelpViewContentTests: XCTestCase {
         XCTAssertTrue(text.contains("SSH Config Forwards"))
         XCTAssertTrue(text.contains("Run Diagnostics"))
         XCTAssertTrue(text.contains("Host Alias"))
-        XCTAssertTrue(text.contains("Check for Updates"))
+        XCTAssertTrue(text.contains("About & Updates"))
     }
 
     func testHelpContentDoesNotMentionRemovedLegacyFields() {
