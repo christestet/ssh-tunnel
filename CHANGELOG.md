@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/christestet/ssh-tunnel/compare/v2.2.4...v2.3.0) (2026-06-02)
+
+
+### Features
+
+* App Updater ([#9](https://github.com/christestet/ssh-tunnel/issues/9)) ([fe1e8ae](https://github.com/christestet/ssh-tunnel/commit/fe1e8ae5032c0e2a8b23e64dbf29ff4c4634c5d1))
+
 ## [2.2.4](https://github.com/christestet/ssh-tunnel/compare/v2.2.3...v2.2.4) (2026-06-02)
 
 
