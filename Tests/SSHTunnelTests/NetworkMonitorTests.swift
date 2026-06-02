@@ -150,14 +150,18 @@ final class NetworkMonitorTests: XCTestCase {
         )
 
         monitor.handlePathUpdate(satisfied: true)
-        try await Task.sleep(nanoseconds: 30_000_000)
+        await waitUntil { !readiness.probes.isEmpty }
 
         XCTAssertEqual(controller.state, .disconnected)
         XCTAssertTrue(masterClient.startCalls.isEmpty)
         XCTAssertEqual(readiness.probes.first, .init(host: "vpn-gateway.internal", port: 443, timeout: 0.01))
 
         readiness.setReachable(true)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntil {
+            controller.state == .connected
+                && masterClient.startCalls.count == 1
+                && readiness.probes.count >= 2
+        }
 
         XCTAssertEqual(controller.state, .connected)
         XCTAssertEqual(masterClient.startCalls.count, 1)

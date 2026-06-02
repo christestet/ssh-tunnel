@@ -17,12 +17,15 @@ APP_SRC    := $(shell find Sources/$(APP) -name '*.swift' | sort)
 LIB_AR     := $(MODULES)/lib$(LIB).a
 LIB_MOD    := $(MODULES)/$(LIB).swiftmodule
 ICON_SRC   := assets/icon.png
+APP_ICON   := assets/AppIcon.icns
+MENU_ICON  := assets/MenuBarIcon.png
+MENU_ICON2 := assets/MenuBarIcon@2x.png
 RESOURCES  := $(BUNDLE)/Contents/Resources
 SDK        := $(shell xcrun --sdk macosx --show-sdk-path)
 ARCH       := $(shell uname -m)
 TARGET     := $(ARCH)-apple-macosx26.0
 
-.PHONY: all bundle build test icons appicon dmg install run stop clean
+.PHONY: all bundle build test dmg install run stop clean
 
 all: bundle
 
@@ -47,34 +50,19 @@ $(BIN): $(APP_SRC) $(LIB_AR) $(LIB_MOD)
 		-I $(MODULES) -L $(MODULES) -l$(LIB) \
 		$(APP_SRC) -o $@
 
-bundle: build
+bundle: build $(APP_ICON) $(MENU_ICON) $(MENU_ICON2)
 	@rm -rf $(BUNDLE)
 	@mkdir -p $(BUNDLE)/Contents/MacOS $(RESOURCES)
 	@cp $(BIN) $(BUNDLE)/Contents/MacOS/$(APP)
 	@cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_VERSION)" $(BUNDLE)/Contents/Info.plist
-	@$(MAKE) -s icons
-	@$(MAKE) -s appicon
+	@cp $(MENU_ICON) $(RESOURCES)/MenuBarIcon.png
+	@cp $(MENU_ICON2) $(RESOURCES)/MenuBarIcon@2x.png
+	@cp $(APP_ICON) $(RESOURCES)/AppIcon.icns
 	@echo "→ codesign (ad-hoc)"
 	@codesign --force --sign - --options runtime $(BUNDLE)
 	@echo "✓ built $(BUNDLE)"
-
-icons: $(ICON_SRC)
-	@echo "→ menu-bar icons"
-	@sips -z 18 18 $(ICON_SRC) --out $(RESOURCES)/MenuBarIcon.png >/dev/null
-	@sips -z 36 36 $(ICON_SRC) --out $(RESOURCES)/MenuBarIcon@2x.png >/dev/null
-
-appicon: $(ICON_SRC)
-	@echo "→ app icon (.icns)"
-	@rm -rf $(BUILD)/AppIcon.iconset
-	@mkdir -p $(BUILD)/AppIcon.iconset
-	@for sz in 16 32 128 256 512; do \
-		dbl=$$(($$sz * 2)); \
-		sips -z $$sz $$sz $(ICON_SRC) --out $(BUILD)/AppIcon.iconset/icon_$${sz}x$${sz}.png >/dev/null; \
-		sips -z $$dbl $$dbl $(ICON_SRC) --out $(BUILD)/AppIcon.iconset/icon_$${sz}x$${sz}@2x.png >/dev/null; \
-	done
-	@iconutil -c icns -o $(RESOURCES)/AppIcon.icns $(BUILD)/AppIcon.iconset
 
 dmg: bundle
 	@rm -rf $(DIST_STAGING)

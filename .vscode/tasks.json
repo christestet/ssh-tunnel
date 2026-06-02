@@ -17,6 +17,13 @@
             "command": "make bundle",
             "group": "build",
             "problemMatcher": []
+        },
+        {
+            "label": "make: DMG",
+            "type": "shell",
+            "command": "make dmg",
+            "group": "build",
+            "problemMatcher": []
         }
     ]
 }
