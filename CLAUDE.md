@@ -1,0 +1,1 @@
+Always look into the AGENTS.md file
