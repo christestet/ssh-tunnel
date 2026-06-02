@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.4](https://github.com/christestet/ssh-tunnel/compare/v2.2.3...v2.2.4) (2026-06-02)
+
+
+### Bug Fixes
+
+* drain subprocess pipes concurrently and harden notifications, menu bar icon, quick forwards ([#6](https://github.com/christestet/ssh-tunnel/issues/6)) ([e54db70](https://github.com/christestet/ssh-tunnel/commit/e54db70a22156703952865fa467b856a207e42f9))
+
 ## [2.2.3](https://github.com/christestet/ssh-tunnel/compare/v2.2.2...v2.2.3) (2026-06-02)
 
 
