@@ -75,6 +75,39 @@ struct UserNotificationTunnelNotifier: TunnelNotifying {
     }
 }
 
+/// Posts a user notification when a background update check finds a newer
+/// release. The release URL is carried in `userInfo` so the app's notification
+/// delegate can open it on tap.
+public struct UserNotificationUpdateNotifier: UpdateNotifying {
+    /// `userInfo` key holding the release page URL string. Public so the app's
+    /// notification delegate can read it to open the release page on tap.
+    public static let releaseURLKey = "releaseURL"
+
+    public init() {}
+
+    public func sendUpdateAvailableNotification(version: String, releaseURL: URL) {
+        guard isRunningFromApplicationBundle else { return }
+        let urlString = releaseURL.absoluteString
+        Task {
+            guard await NotificationAuthorization.ensure() else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Update available"
+            content.body = "SSH Tunnel \(version) is available. Click to view the release."
+            content.userInfo = [Self.releaseURLKey: urlString]
+            let request = UNNotificationRequest(
+                identifier: "ssh-tunnel-update-\(version)",
+                content: content,
+                trigger: nil
+            )
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    private var isRunningFromApplicationBundle: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
+    }
+}
+
 /// Requests notification authorization at most once for the process. Requesting
 /// contextually (on the first real notification) rather than at launch follows
 /// the HIG and avoids prompting the user before they understand why.

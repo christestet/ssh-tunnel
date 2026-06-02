@@ -13,13 +13,28 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
+
+    /// Opens the release page when the user taps an "Update available"
+    /// notification. The URL travels in `userInfo` from
+    /// `UserNotificationUpdateNotifier`.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let urlString = userInfo[UserNotificationUpdateNotifier.releaseURLKey] as? String,
+              let url = URL(string: urlString) else { return }
+        await MainActor.run { NSWorkspace.shared.open(url) }
+    }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var manager: TunnelManager?
+    weak var updateChecker: UpdateChecker?
     private let notificationPresenter = NotificationPresenter()
     private let instanceGuard = SingleInstanceGuard()
+    private var updateLoopTask: Task<Void, Never>?
 
     /// Single-instance enforcement via an advisory file lock — race-free, unlike
     /// enumerating peers and terminating them (which can make both instances
@@ -43,11 +58,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in
             await self?.manager?.start()
         }
+        startUpdateLoop()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         TunnelLog.shared.log(.notice, .lifecycle, "app terminating")
+        updateLoopTask?.cancel()
         manager?.stopSynchronously()
+    }
+
+    /// Runs an initial gated update check at launch, then sleeps until the
+    /// checker reports the next one is due (≈24h after a success, sooner after
+    /// a failure). The gate guarantees at most one successful network request
+    /// per day; this just avoids waking pointlessly in between.
+    private func startUpdateLoop() {
+        updateLoopTask?.cancel()
+        updateLoopTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let checker = self?.updateChecker else { return }
+                await checker.automaticCheckIfDue()
+                let delay = checker.nextAutomaticCheckDelay()
+                try? await Task.sleep(for: delay)
+            }
+        }
     }
 }
 
@@ -55,17 +88,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct SSHTunnelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var manager: TunnelManager
+    @State private var updateChecker: UpdateChecker
 
     init() {
         let settingsStore = TunnelSettingsStore()
         let manager = TunnelManager(settingsStore: settingsStore)
+        let updateChecker = UpdateChecker(settings: UpdateSettingsStore())
         _manager = State(initialValue: manager)
+        _updateChecker = State(initialValue: updateChecker)
         appDelegate.manager = manager
+        appDelegate.updateChecker = updateChecker
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(manager: manager)
+            MenuBarView(manager: manager, updateChecker: updateChecker)
         } label: {
             // Template image + SwiftUI tint: the glyph adapts to light/dark and
             // the Tahoe menu-bar appearance automatically, and state is conveyed
@@ -78,6 +115,7 @@ struct SSHTunnelApp: App {
         Settings {
             TunnelListSettingsView(
                 manager: manager,
+                updateChecker: updateChecker,
                 initialSelection: manager.settingsSelection
             )
             // Matches Constants.settingsMinWidth/Height; the NavigationSplitView

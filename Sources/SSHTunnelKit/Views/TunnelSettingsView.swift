@@ -23,12 +23,15 @@ enum SettingsNumberDisplay {
 
 public struct TunnelListSettingsView: View {
     @Bindable var manager: TunnelManager
+    let updateChecker: UpdateChecker
 
     @State private var selectedId: UUID?
     @State private var isConfirmingDelete = false
+    @State private var showingUpdates = false
 
-    public init(manager: TunnelManager, initialSelection: UUID?) {
+    public init(manager: TunnelManager, updateChecker: UpdateChecker, initialSelection: UUID?) {
         self.manager = manager
+        self.updateChecker = updateChecker
         _selectedId = State(initialValue: initialSelection)
     }
 
@@ -51,48 +54,7 @@ public struct TunnelListSettingsView: View {
 
                 Divider()
 
-                HStack(spacing: 10) {
-                    Button {
-                        let tunnel = manager.addTunnelForEditing()
-                        selectedId = tunnel.id
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("New Tunnel")
-                    .help("New Tunnel")
-
-                    Button(role: .destructive) {
-                        isConfirmingDelete = true
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .accessibilityLabel("Delete Tunnel")
-                    .disabled(selectedId == nil)
-                    .help("Delete Tunnel")
-
-                    Button {
-                        moveSelectedTunnel(by: -1)
-                    } label: {
-                        Image(systemName: "arrow.up")
-                    }
-                    .accessibilityLabel("Move Tunnel Up")
-                    .disabled(!canMoveSelectedTunnel(by: -1))
-                    .help("Move Tunnel Up")
-
-                    Button {
-                        moveSelectedTunnel(by: 1)
-                    } label: {
-                        Image(systemName: "arrow.down")
-                    }
-                    .accessibilityLabel("Move Tunnel Down")
-                    .disabled(!canMoveSelectedTunnel(by: 1))
-                    .help("Move Tunnel Down")
-
-                    Spacer()
-                }
-                .buttonStyle(.borderless)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                sidebarToolbar
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 200)
         } detail: {
@@ -139,6 +101,72 @@ public struct TunnelListSettingsView: View {
                 self.selectedId = ids.first
                 return
             }
+        }
+    }
+
+    /// Sidebar footer: add / delete / reorder tunnels, plus the About & Updates
+    /// affordance. Extracted from `body` to keep each view expression small
+    /// enough for the SwiftUI type-checker.
+    private var sidebarToolbar: some View {
+        HStack(spacing: 10) {
+            Button {
+                let tunnel = manager.addTunnelForEditing()
+                selectedId = tunnel.id
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("New Tunnel")
+            .help("New Tunnel")
+
+            Button(role: .destructive) {
+                isConfirmingDelete = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .accessibilityLabel("Delete Tunnel")
+            .disabled(selectedId == nil)
+            .help("Delete Tunnel")
+
+            Button {
+                moveSelectedTunnel(by: -1)
+            } label: {
+                Image(systemName: "arrow.up")
+            }
+            .accessibilityLabel("Move Tunnel Up")
+            .disabled(!canMoveSelectedTunnel(by: -1))
+            .help("Move Tunnel Up")
+
+            Button {
+                moveSelectedTunnel(by: 1)
+            } label: {
+                Image(systemName: "arrow.down")
+            }
+            .accessibilityLabel("Move Tunnel Down")
+            .disabled(!canMoveSelectedTunnel(by: 1))
+            .help("Move Tunnel Down")
+
+            Spacer()
+
+            updatesButton
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var updatesButton: some View {
+        let hasUpdate = updateChecker.availableUpdate != nil
+        return Button {
+            showingUpdates = true
+        } label: {
+            Image(systemName: hasUpdate ? "arrow.down.circle.fill" : "info.circle")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(hasUpdate ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        }
+        .accessibilityLabel("About & Updates")
+        .help("About & Updates")
+        .popover(isPresented: $showingUpdates, arrowEdge: .bottom) {
+            UpdatesSettingsView(updateChecker: updateChecker)
         }
     }
 
