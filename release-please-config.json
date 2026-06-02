@@ -8,10 +8,6 @@
         {
           "type": "generic",
           "path": "Resources/Info.plist"
-        },
-        {
-          "type": "generic",
-          "path": "Tests/SSHTunnelTests/BuildMetadataTests.swift"
         }
       ]
     }

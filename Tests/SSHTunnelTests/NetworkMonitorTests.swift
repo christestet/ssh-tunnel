@@ -196,7 +196,7 @@ final class NetworkMonitorTests: XCTestCase {
         )
 
         monitor.handlePathUpdate(satisfied: true)
-        try await Task.sleep(nanoseconds: 30_000_000)
+        await waitUntil { !readiness.probes.isEmpty }
         monitor.handlePathUpdate(satisfied: false)
         readiness.setReachable(true)
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -492,6 +492,17 @@ final class FakePathSource: NetworkPathSource, @unchecked Sendable {
 
     func emit(satisfied: Bool) {
         continuation.yield(satisfied)
+    }
+}
+
+private func waitUntil(
+    timeout: TimeInterval = 1,
+    condition: @escaping @MainActor () -> Bool
+) async {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() { return }
+        try? await Task.sleep(for: .milliseconds(10))
     }
 }
 

@@ -4,12 +4,18 @@ on:
   push:
     branches: ["main"]
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing tag to build and upload, for example v2.2.0"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   release-please:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.tag_name == '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,21 +33,21 @@ jobs:
 
   build-dmg:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || inputs.tag_name != '') }}
     runs-on: macos-26
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ inputs.tag_name || needs.release-please.outputs.tag_name }}
 
       - name: Run tests
         run: swift test -v
 
       - name: Build DMG
         env:
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          TAG_NAME: ${{ inputs.tag_name || needs.release-please.outputs.tag_name }}
         run: |
           VERSION="${TAG_NAME#v}"
           make dmg VERSION="${VERSION}" BUILD_VERSION="${GITHUB_RUN_NUMBER}"
@@ -50,7 +56,9 @@ jobs:
       - name: Upload DMG
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          TAG_NAME: ${{ inputs.tag_name || needs.release-please.outputs.tag_name }}
         run: |
           VERSION="${TAG_NAME#v}"
+          gh release view "${TAG_NAME}" >/dev/null 2>&1 || \
+            gh release create "${TAG_NAME}" --title "${TAG_NAME}" --notes "Release assets for ${TAG_NAME}"
           gh release upload "${TAG_NAME}" "dist/SSHTunnel-v${VERSION}-macos26-arm64.dmg" --clobber
