@@ -68,9 +68,12 @@ final class MutableClock: @unchecked Sendable {
 }
 
 final class UpdateCheckerTests: XCTestCase {
+    @MainActor
     private func makeStore() -> UpdateSettingsStore {
-        let defaults = UserDefaults(suiteName: "UpdateCheckerTests-\(UUID().uuidString)")!
-        return UpdateSettingsStore(defaults: defaults)
+        let suite = "UpdateCheckerTests-\(UUID().uuidString)"
+        // Clean up the leaked plist suite after the test, matching TunnelLogTests.
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
+        return UpdateSettingsStore(defaults: UserDefaults(suiteName: suite)!)
     }
 
     private func release(
@@ -159,10 +162,11 @@ final class UpdateCheckerTests: XCTestCase {
     // MARK: - 24h gate
 
     @MainActor
-    func testAutomaticCheckSkippedWhenCheckedRecently() async {
+    func testAutomaticCheckSkippedWhenSucceededRecently() async {
         let base = Date(timeIntervalSinceReferenceDate: 1_000_000)
         let store = makeStore()
-        store.lastCheckDate = base.addingTimeInterval(-3600) // 1h ago
+        store.lastSuccessDate = base.addingTimeInterval(-3600) // 1h ago
+        store.lastAttemptDate = base.addingTimeInterval(-3600)
         let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
         let checker = UpdateChecker(
             fetcher: fetcher, settings: store, currentVersion: "2.2.4", now: { base }
@@ -174,10 +178,11 @@ final class UpdateCheckerTests: XCTestCase {
     }
 
     @MainActor
-    func testAutomaticCheckRunsWhenStale() async {
+    func testAutomaticCheckRunsWhenSuccessWindowElapsed() async {
         let base = Date(timeIntervalSinceReferenceDate: 1_000_000)
         let store = makeStore()
-        store.lastCheckDate = base.addingTimeInterval(-25 * 3600) // 25h ago
+        store.lastSuccessDate = base.addingTimeInterval(-25 * 3600) // 25h ago
+        store.lastAttemptDate = base.addingTimeInterval(-25 * 3600)
         let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
         let checker = UpdateChecker(
             fetcher: fetcher, settings: store, currentVersion: "2.2.4", now: { base }
@@ -186,14 +191,15 @@ final class UpdateCheckerTests: XCTestCase {
         await checker.automaticCheckIfDue()
 
         XCTAssertEqual(fetcher.callCount, 1)
-        XCTAssertEqual(store.lastCheckDate, base)
+        XCTAssertEqual(store.lastSuccessDate, base)
+        XCTAssertEqual(store.lastAttemptDate, base)
         XCTAssertEqual(checker.availableUpdate?.version, "v2.3.0")
     }
 
     @MainActor
     func testAutomaticCheckRunsWhenNeverChecked() async {
         let store = makeStore()
-        XCTAssertNil(store.lastCheckDate)
+        XCTAssertNil(store.lastSuccessDate)
         let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
         let checker = UpdateChecker(fetcher: fetcher, settings: store, currentVersion: "2.2.4")
 
@@ -218,7 +224,8 @@ final class UpdateCheckerTests: XCTestCase {
     func testManualCheckAlwaysRunsRegardlessOfGate() async {
         let base = Date(timeIntervalSinceReferenceDate: 1_000_000)
         let store = makeStore()
-        store.lastCheckDate = base // just checked
+        store.lastSuccessDate = base // just succeeded
+        store.lastAttemptDate = base
         let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
         let checker = UpdateChecker(
             fetcher: fetcher, settings: store, currentVersion: "2.2.4", now: { base }
@@ -227,6 +234,31 @@ final class UpdateCheckerTests: XCTestCase {
         await checker.checkForUpdates()
 
         XCTAssertEqual(fetcher.callCount, 1)
+    }
+
+    @MainActor
+    func testFailedCheckDoesNotBlockRetryForFullDay() async {
+        let clock = MutableClock(Date(timeIntervalSinceReferenceDate: 1_000_000))
+        let store = makeStore()
+        let fetcher = FakeReleaseFetcher(.failure(UpdateCheckError.httpStatus(503)))
+        let checker = UpdateChecker(
+            fetcher: fetcher, settings: store, currentVersion: "2.2.4", now: { clock.now }
+        )
+
+        // First attempt fails — no success recorded, only an attempt timestamp.
+        await checker.automaticCheckIfDue()
+        XCTAssertEqual(fetcher.callCount, 1)
+        XCTAssertNil(store.lastSuccessDate)
+
+        // Within the retry floor (30m < 1h): must not hammer.
+        clock.advance(by: 30 * 60)
+        await checker.automaticCheckIfDue()
+        XCTAssertEqual(fetcher.callCount, 1)
+
+        // After the retry floor (well past 1h, still far short of 24h): retries.
+        clock.advance(by: 2 * 3600)
+        await checker.automaticCheckIfDue()
+        XCTAssertEqual(fetcher.callCount, 2)
     }
 
     // MARK: - Notifications
@@ -277,6 +309,46 @@ final class UpdateCheckerTests: XCTestCase {
 
         XCTAssertEqual(fetcher.callCount, 2)
         XCTAssertEqual(notifier.notifications.count, 1)
+    }
+
+    @MainActor
+    func testDoesNotReNotifySameVersionAcrossRelaunch() async {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        // Simulate a relaunch: the store already saw this version (persisted),
+        // and the success window has elapsed so a fresh check is due.
+        let store = makeStore()
+        store.lastNotifiedVersion = "v2.3.0"
+        store.lastSuccessDate = base.addingTimeInterval(-25 * 3600)
+        store.lastAttemptDate = base.addingTimeInterval(-25 * 3600)
+        let notifier = SpyUpdateNotifier()
+        let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
+        let checker = UpdateChecker(
+            fetcher: fetcher, settings: store, currentVersion: "2.2.4", notifier: notifier, now: { base }
+        )
+
+        await checker.automaticCheckIfDue()
+
+        // The banner still surfaces the update, but no duplicate notification.
+        XCTAssertEqual(checker.availableUpdate?.version, "v2.3.0")
+        XCTAssertTrue(notifier.notifications.isEmpty)
+    }
+
+    // MARK: - Loop scheduling
+
+    @MainActor
+    func testNextDelayWaits24hAfterSuccessAndPollsWhenDisabled() async {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let store = makeStore()
+        let fetcher = FakeReleaseFetcher(.success(release(tag: "v2.3.0")))
+        let checker = UpdateChecker(
+            fetcher: fetcher, settings: store, currentVersion: "2.2.4", now: { base }
+        )
+
+        await checker.checkForUpdates() // success at `base`
+        XCTAssertEqual(checker.nextAutomaticCheckDelay(), .seconds(24 * 3600))
+
+        store.automaticChecksEnabled = false
+        XCTAssertEqual(checker.nextAutomaticCheckDelay(), UpdateChecker.disabledPollInterval)
     }
 
     // MARK: - JSON decoding

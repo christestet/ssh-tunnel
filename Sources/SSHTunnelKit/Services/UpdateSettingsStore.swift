@@ -15,21 +15,39 @@ public final class UpdateSettingsStore {
         didSet { defaults.set(automaticChecksEnabled, forKey: automaticChecksKey) }
     }
 
-    /// Timestamp of the last successful automatic check. Used as the hard 24h
-    /// gate so repeated relaunches never exceed one request per day.
-    var lastCheckDate: Date? {
+    /// Timestamp of the last *successful* automatic/manual check. This is the
+    /// 24h gate: a successful check suppresses further automatic checks for a
+    /// day. A failed check does NOT update this, so we retry sooner (see
+    /// `lastAttemptDate`).
+    var lastSuccessDate: Date? {
+        didSet { persist(lastSuccessDate, forKey: lastSuccessKey) }
+    }
+
+    /// Timestamp of the last check *attempt* (success or failure). Used both for
+    /// the UI's "last checked" label and as a short retry floor so a failing
+    /// check can't hammer the API.
+    var lastAttemptDate: Date? {
+        didSet { persist(lastAttemptDate, forKey: lastAttemptKey) }
+    }
+
+    /// The most recent version we already posted an "Update available"
+    /// notification for. Persisted so a relaunch doesn't re-notify for a release
+    /// the user has already seen.
+    var lastNotifiedVersion: String? {
         didSet {
-            if let lastCheckDate {
-                defaults.set(lastCheckDate.timeIntervalSinceReferenceDate, forKey: lastCheckKey)
+            if let lastNotifiedVersion {
+                defaults.set(lastNotifiedVersion, forKey: lastNotifiedVersionKey)
             } else {
-                defaults.removeObject(forKey: lastCheckKey)
+                defaults.removeObject(forKey: lastNotifiedVersionKey)
             }
         }
     }
 
     private let defaults: UserDefaults
     private let automaticChecksKey = "UpdateAutomaticChecksEnabled"
-    private let lastCheckKey = "UpdateLastCheckDate"
+    private let lastSuccessKey = "UpdateLastSuccessDate"
+    private let lastAttemptKey = "UpdateLastAttemptDate"
+    private let lastNotifiedVersionKey = "UpdateLastNotifiedVersion"
 
     public convenience init() {
         self.init(defaults: .standard)
@@ -42,11 +60,21 @@ public final class UpdateSettingsStore {
         } else {
             automaticChecksEnabled = Self.defaultAutomaticChecksEnabled
         }
+        lastSuccessDate = Self.readDate(from: defaults, key: lastSuccessKey)
+        lastAttemptDate = Self.readDate(from: defaults, key: lastAttemptKey)
+        lastNotifiedVersion = defaults.string(forKey: lastNotifiedVersionKey)
+    }
 
-        if let stamp = defaults.object(forKey: lastCheckKey) as? Double {
-            lastCheckDate = Date(timeIntervalSinceReferenceDate: stamp)
+    private func persist(_ date: Date?, forKey key: String) {
+        if let date {
+            defaults.set(date.timeIntervalSinceReferenceDate, forKey: key)
         } else {
-            lastCheckDate = nil
+            defaults.removeObject(forKey: key)
         }
+    }
+
+    private static func readDate(from defaults: UserDefaults, key: String) -> Date? {
+        guard let stamp = defaults.object(forKey: key) as? Double else { return nil }
+        return Date(timeIntervalSinceReferenceDate: stamp)
     }
 }

@@ -9,6 +9,7 @@ public struct MenuBarView: View {
     @Bindable var manager: TunnelManager
     let updateChecker: UpdateChecker
     @State private var isCheckingForUpdates = false
+    @State private var updateCheckMessage: String?
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
@@ -27,10 +28,31 @@ public struct MenuBarView: View {
             Divider()
             tunnelList
             Divider()
+            if let updateCheckMessage {
+                manualCheckFeedback(updateCheckMessage)
+            }
             actionBar
         }
         .frame(width: Constants.menuBarPanelWidth)
         .frame(minHeight: Constants.menuBarPanelMinHeight)
+    }
+
+    /// Transient result of a manual menu-bar update check for the cases the
+    /// banner doesn't cover (already up to date, or a check error).
+    private func manualCheckFeedback(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: updateChecker.lastErrorMessage == nil
+                ? "checkmark.circle"
+                : "exclamationmark.triangle")
+                .foregroundStyle(updateChecker.lastErrorMessage == nil ? .secondary : .orange)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     /// Surfaces a newer GitHub release. Tapping opens the release page (notes +
@@ -232,8 +254,17 @@ public struct MenuBarView: View {
     private func checkForUpdates() {
         Task {
             isCheckingForUpdates = true
+            updateCheckMessage = nil
             await updateChecker.checkForUpdates()
             isCheckingForUpdates = false
+
+            // When a newer release exists the banner already surfaces it; only
+            // give transient feedback for the otherwise-silent outcomes.
+            guard updateChecker.availableUpdate == nil else { return }
+            let message = updateChecker.lastErrorMessage ?? "You're up to date."
+            updateCheckMessage = message
+            try? await Task.sleep(for: .seconds(4))
+            if updateCheckMessage == message { updateCheckMessage = nil }
         }
     }
 

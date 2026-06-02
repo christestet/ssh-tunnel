@@ -36,11 +36,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let instanceGuard = SingleInstanceGuard()
     private var updateLoopTask: Task<Void, Never>?
 
-    /// How often the periodic loop wakes to re-evaluate whether an automatic
-    /// check is due. The 24h gate lives in `UpdateChecker.automaticCheckIfDue`,
-    /// so a frequent wake-up is cheap — almost every tick is a no-op.
-    private static let updateLoopInterval: Duration = .seconds(3600)
-
     /// Single-instance enforcement via an advisory file lock — race-free, unlike
     /// enumerating peers and terminating them (which can make both instances
     /// quit when launched simultaneously).
@@ -62,8 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UNUserNotificationCenter.current().delegate = notificationPresenter
         Task { @MainActor [weak self] in
             await self?.manager?.start()
-            // Initial, gated update check after launch.
-            await self?.updateChecker?.automaticCheckIfDue()
         }
         startUpdateLoop()
     }
@@ -74,15 +67,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager?.stopSynchronously()
     }
 
-    /// Wakes roughly hourly and asks the checker whether a check is due. The
-    /// 24h gate guarantees at most one network request per day.
+    /// Runs an initial gated update check at launch, then sleeps until the
+    /// checker reports the next one is due (≈24h after a success, sooner after
+    /// a failure). The gate guarantees at most one successful network request
+    /// per day; this just avoids waking pointlessly in between.
     private func startUpdateLoop() {
         updateLoopTask?.cancel()
         updateLoopTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.updateLoopInterval)
-                if Task.isCancelled { return }
-                await self?.updateChecker?.automaticCheckIfDue()
+                guard let checker = self?.updateChecker else { return }
+                await checker.automaticCheckIfDue()
+                let delay = checker.nextAutomaticCheckDelay()
+                try? await Task.sleep(for: delay)
             }
         }
     }

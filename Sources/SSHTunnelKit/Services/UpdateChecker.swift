@@ -107,8 +107,14 @@ public final class UpdateChecker {
         public let releaseURL: URL
     }
 
-    /// Hard gate for automatic checks — at most one per 24h.
+    /// Hard gate for automatic checks — at most one *successful* check per 24h.
     static let automaticCheckInterval: TimeInterval = 24 * 60 * 60
+    /// After a failed check we may retry this soon (rather than waiting the full
+    /// 24h), but no sooner — so a persistent failure can't hammer the API.
+    static let failureRetryInterval: TimeInterval = 60 * 60
+    /// How long the periodic loop sleeps while automatic checks are disabled,
+    /// so re-enabling them is picked up reasonably promptly.
+    static let disabledPollInterval: Duration = .seconds(60 * 60)
 
     public private(set) var availableUpdate: AvailableUpdate?
     public private(set) var isChecking = false
@@ -117,8 +123,9 @@ public final class UpdateChecker {
     /// The running app version, e.g. "2.2.4".
     public let currentVersion: String
 
-    /// Surfaced for the Settings "last checked" label.
-    public var lastCheckDate: Date? { settings.lastCheckDate }
+    /// Surfaced for the Settings "last checked" label — the most recent attempt
+    /// (success or failure), which is what the user thinks of as "last checked".
+    public var lastCheckDate: Date? { settings.lastAttemptDate }
     public var automaticChecksEnabled: Bool {
         get { settings.automaticChecksEnabled }
         set { settings.automaticChecksEnabled = newValue }
@@ -156,32 +163,52 @@ public final class UpdateChecker {
     }
 
     /// Single guarded entry point for automatic checks. Returns immediately
-    /// without any network access unless automatic checks are enabled *and* it
-    /// has been at least 24h since the last check. This is the only place the
-    /// 24h rule lives, so neither launch nor the periodic loop can bypass it.
+    /// without any network access unless automatic checks are enabled *and* a
+    /// check is due. The 24h success window and the failure-retry floor are the
+    /// only gates, so neither launch nor the periodic loop can bypass them.
     public func automaticCheckIfDue() async {
-        guard settings.automaticChecksEnabled else { return }
-        if let last = settings.lastCheckDate,
-           now().timeIntervalSince(last) < Self.automaticCheckInterval {
-            return
-        }
+        guard settings.automaticChecksEnabled, nextDueDate() <= now() else { return }
         await performCheck(isAutomatic: true)
     }
 
-    /// User-initiated check. Always runs regardless of the 24h gate.
+    /// User-initiated check. Always runs regardless of the gate.
     public func checkForUpdates() async {
         await performCheck(isAutomatic: false)
     }
 
+    /// How long the periodic loop should sleep before the next automatic check
+    /// is due. Returns a short poll interval while checks are disabled so the
+    /// loop keeps re-evaluating (e.g. after the user re-enables them).
+    public func nextAutomaticCheckDelay() -> Duration {
+        guard settings.automaticChecksEnabled else { return Self.disabledPollInterval }
+        let seconds = max(0, nextDueDate().timeIntervalSince(now()))
+        return .seconds(seconds)
+    }
+
+    /// The earliest moment an automatic check is allowed: after both the 24h
+    /// success window and the failure-retry floor have elapsed. Missing
+    /// timestamps are treated as already-elapsed (check is due now).
+    private func nextDueDate() -> Date {
+        var due = now()
+        if let lastSuccess = settings.lastSuccessDate {
+            due = max(due, lastSuccess.addingTimeInterval(Self.automaticCheckInterval))
+        }
+        if let lastAttempt = settings.lastAttemptDate {
+            due = max(due, lastAttempt.addingTimeInterval(Self.failureRetryInterval))
+        }
+        return due
+    }
+
     private func performCheck(isAutomatic: Bool) async {
         isChecking = true
-        // Stamp the attempt up front so the 24h gate counts every automatic
-        // check (success or failure) and the UI's "last checked" stays honest.
-        settings.lastCheckDate = now()
+        // Every attempt updates the UI's "last checked" and the failure-retry
+        // floor; only a *successful* fetch advances the 24h success window.
+        settings.lastAttemptDate = now()
         defer { isChecking = false }
 
         do {
             let release = try await fetcher.fetchLatestRelease()
+            settings.lastSuccessDate = now()
             lastErrorMessage = nil
             apply(release: release, isAutomatic: isAutomatic)
         } catch {
@@ -200,13 +227,13 @@ public final class UpdateChecker {
         }
 
         let displayVersion = AppVersionDisplay.badge(for: release.tagName) ?? release.tagName
-        let update = AvailableUpdate(version: displayVersion, releaseURL: url)
-        let isNewlyDiscovered = availableUpdate != update
-        availableUpdate = update
+        availableUpdate = AvailableUpdate(version: displayVersion, releaseURL: url)
 
-        // Only nudge with a notification for background discoveries; a manual
-        // check already shows the result inline.
-        if isAutomatic, isNewlyDiscovered {
+        // Only nudge with a notification for background discoveries, and only
+        // once per version across relaunches (the seen version is persisted). A
+        // manual check already shows the result inline.
+        if isAutomatic, settings.lastNotifiedVersion != displayVersion {
+            settings.lastNotifiedVersion = displayVersion
             notifier?.sendUpdateAvailableNotification(version: displayVersion, releaseURL: url)
         }
     }
