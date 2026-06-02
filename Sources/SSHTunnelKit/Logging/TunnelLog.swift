@@ -77,6 +77,8 @@ public enum LogLevel: Int, Sendable, Comparable, CustomStringConvertible, Codabl
         case .notice: return .default
         case .warning: return .error
         case .error: return .fault
+        // `.off` is a filter threshold, never an emitted level (`shouldLog`
+        // rejects it), so this fallback is unreachable in practice.
         case .off: return .debug
         }
     }

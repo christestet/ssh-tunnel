@@ -1,30 +1,9 @@
-import AppKit
-import SwiftUI
-
 public enum TunnelState: Equatable {
     case disconnected
     case connecting
     case connected
     case reconnecting
     case failed
-
-    var listColor: Color {
-        switch self {
-        case .connected: return .green
-        case .connecting, .reconnecting: return .yellow
-        case .failed: return .red
-        case .disconnected: return .gray
-        }
-    }
-
-    public var menuBarTintColor: NSColor? {
-        switch self {
-        case .connected: return .systemGreen
-        case .connecting, .reconnecting: return .systemYellow
-        case .failed: return .systemRed
-        case .disconnected: return nil
-        }
-    }
 
     var label: String {
         switch self {
