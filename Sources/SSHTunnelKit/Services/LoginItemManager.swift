@@ -22,7 +22,7 @@ final class LoginItemManager: LoginItemManaging {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            NSLog("LoginItem toggle failed: \(error)")
+            TunnelLog.shared.log(.error, .lifecycle, "login item toggle failed: \(error)")
         }
         isEnabled = SMAppService.mainApp.status == .enabled
     }

@@ -78,18 +78,28 @@ struct LocalPortAvailabilityChecker: PortAvailabilityChecking {
     }
 
     func findFreePort(in range: ClosedRange<Int>) async -> Int? {
-        // Try random ports in the range first to avoid predictable collisions
-        // if multiple apps use the same logic.
-        let candidates = Array(range).shuffled()
-        for port in candidates {
-            let busy = await Task.detached(priority: .userInitiated) {
-                Self.bindProbe(port: port)
-            }.value
-            if !busy {
-                return port
-            }
+        // Probe a bounded number of *random* candidates rather than allocating
+        // and shuffling the whole 1024–65535 range on every call. Random samples
+        // also avoid predictable collisions if multiple apps use the same logic.
+        // A free port is overwhelmingly likely within a few hundred attempts;
+        // fall back to a full scan only if the range is nearly exhausted.
+        let maxRandomAttempts = 256
+        var tried = Set<Int>()
+        for _ in 0..<maxRandomAttempts {
+            let port = Int.random(in: range)
+            guard tried.insert(port).inserted else { continue }
+            if await isFree(port) { return port }
+        }
+        for port in range where !tried.contains(port) {
+            if await isFree(port) { return port }
         }
         return nil
+    }
+
+    private func isFree(_ port: Int) async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            !Self.bindProbe(port: port)
+        }.value
     }
 
     /// POSIX bind probe on 127.0.0.1. Mirrors exactly what `ssh -L` will do:

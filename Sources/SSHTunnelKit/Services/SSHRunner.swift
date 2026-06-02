@@ -269,7 +269,13 @@ private final class ProcessSSHLongRunning: SSHLongRunningProcess, @unchecked Sen
     }
 
     private func handleExit(code: Int32) {
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        // Drain any bytes still buffered in the pipe before detaching the
+        // handler, so the final (often most diagnostic) stderr line isn't lost.
+        let readHandle = stderrPipe.fileHandleForReading
+        readHandle.readabilityHandler = nil
+        if let rest = try? readHandle.readToEnd(), !rest.isEmpty {
+            stderrBuffer.append(rest)
+        }
         let pending = state.withLock { s -> [CheckedContinuation<Int32, Never>] in
             s.exitCode = code
             let copy = s.waiters

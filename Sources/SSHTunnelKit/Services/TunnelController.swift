@@ -126,7 +126,9 @@ final class TunnelController: Identifiable {
         self.logger = logger
         self.portReleaseGrace = portReleaseGrace
         self.maxReconnectAttempts = maxReconnectAttempts
-        notifier.requestAuthorization()
+        // Notification authorization is requested lazily by the notifier the
+        // first time a notification is actually delivered — not here, which used
+        // to fire the system prompt once per configured tunnel at launch.
         if startsMonitoring {
             startHealthCheckTask()
         }
@@ -249,14 +251,23 @@ final class TunnelController: Identifiable {
                 }
                 
                 if let lp = updatedNew[i].localPort {
-                    _ = await masterClient.addForward(
+                    let result = await masterClient.addForward(
                         remotePort: updatedNew[i].remotePort,
                         localPort: lp,
                         target: quickForwardControlTarget,
                         controlPath: settings.expandedControlPath
                     )
-                    appliedQuickForwards.removeAll { $0.localPort == lp && $0.remotePort == updatedNew[i].remotePort }
-                    appliedQuickForwards.append(updatedNew[i])
+                    // Only record forwards that actually came up. Recording a
+                    // failed `-O forward` would make `cancelStaleQuickForwards`
+                    // later issue a spurious `-O cancel` for a port the master
+                    // never opened.
+                    if result.exitCode == 0 {
+                        appliedQuickForwards.removeAll { $0.localPort == lp && $0.remotePort == updatedNew[i].remotePort }
+                        appliedQuickForwards.append(updatedNew[i])
+                    } else {
+                        let err = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                        log(.warning, .forward, "quick forward \(lp)->\(updatedNew[i].remotePort) failed (exit \(result.exitCode)): \(err.isEmpty ? "(no stderr)" : err)")
+                    }
                 }
             }
         }
@@ -280,6 +291,7 @@ final class TunnelController: Identifiable {
         var updatedForwards = settings.quickForwards
         var changed = false
         var errors: [String] = []
+        var applied: [QuickForward] = []
 
         for i in updatedForwards.indices {
             if updatedForwards[i].localPort == nil {
@@ -302,10 +314,14 @@ final class TunnelController: Identifiable {
                     errors.append("Failed to forward remote port \(updatedForwards[i].remotePort) to localhost:\(lp): \(err.isEmpty ? "Unknown error" : err)")
                 } else {
                     log(.info, .forward, "quick forward established \(lp)->\(updatedForwards[i].remotePort)")
+                    applied.append(updatedForwards[i])
                 }
             }
         }
-        appliedQuickForwards = updatedForwards.filter { $0.localPort != nil }
+        // Record only forwards that actually came up, so a later
+        // `cancelStaleQuickForwards` doesn't try to `-O cancel` a port that was
+        // never opened on the master.
+        appliedQuickForwards = applied
         if changed {
             settings.quickForwards = updatedForwards
             NotificationCenter.default.post(name: .tunnelSettingsChanged, object: settings)

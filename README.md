@@ -55,9 +55,23 @@ Download the latest DMG from
 [GitHub Releases](https://github.com/christestet/ssh-tunnel/releases), mount it,
 and drag `SSHTunnel.app` to Applications.
 
-Release DMGs are currently unsigned and ad-hoc signed. Until the project uses
-an Apple Developer ID certificate, macOS Gatekeeper may require you to
-right-click the app, choose **Open**, and confirm the launch.
+### Opening an unsigned build
+
+Release DMGs are **ad-hoc signed, not notarized**. Notarization requires an
+Apple Developer ID certificate (and CI signing secrets) the project does not
+yet have, so macOS Gatekeeper quarantines the download. On macOS 15 (Sequoia)
+and macOS 26 (Tahoe) the old right-click → **Open** bypass no longer works for
+unsigned apps; instead either:
+
+- After dragging the app to `/Applications`, launch it once, then open
+  **System Settings → Privacy & Security** and click **Open Anyway**, or
+- Remove the quarantine attribute from a terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/SSHTunnel.app
+  ```
+
+Locally built apps (`make install`) are not quarantined and open normally.
 
 You can also build and install locally:
 

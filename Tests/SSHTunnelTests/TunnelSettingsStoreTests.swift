@@ -39,6 +39,25 @@ final class TunnelSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testValidationRejectsHostAliasStartingWithDash() throws {
+        let (defaults, suite) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TunnelSettingsStore(defaults: defaults)
+
+        var s = TunnelSettings.makeDefault()
+        s.name = "Name"
+        // A leading dash would be parsed as an ssh option (argument injection).
+        s.hostAlias = "-oProxyCommand=evil"
+        XCTAssertThrowsError(try store.save(s)) { err in
+            XCTAssertEqual(err as? TunnelSettingsValidationError, .hostAliasLooksLikeOption)
+        }
+
+        // A normal alias still saves.
+        s.hostAlias = "prod-server"
+        XCTAssertNoThrow(try store.save(s))
+    }
+
+    @MainActor
     func testValidationRejectsBackoffBelowHealthCheck() throws {
         let (defaults, suite) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

@@ -228,8 +228,15 @@ public final class TunnelSettingsStore {
         if candidate.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw TunnelSettingsValidationError.emptyName
         }
-        if candidate.hostAlias.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let trimmedHostAlias = candidate.hostAlias.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedHostAlias.isEmpty {
             throw TunnelSettingsValidationError.emptyHostAlias
+        }
+        // A host alias is passed positionally to `ssh`, which has no `--` to end
+        // option parsing. An alias beginning with `-` would be interpreted as an
+        // ssh option (argument injection), so reject it up front.
+        if trimmedHostAlias.hasPrefix("-") {
+            throw TunnelSettingsValidationError.hostAliasLooksLikeOption
         }
         if candidate.controlPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw TunnelSettingsValidationError.emptyControlPath
@@ -269,6 +276,7 @@ private extension Array {
 enum TunnelSettingsValidationError: LocalizedError, Equatable {
     case emptyName
     case emptyHostAlias
+    case hostAliasLooksLikeOption
     case emptyControlPath
     case invalidHealthCheckInterval
     case invalidMaxBackoff
@@ -281,6 +289,8 @@ enum TunnelSettingsValidationError: LocalizedError, Equatable {
             return "Tunnel name cannot be empty."
         case .emptyHostAlias:
             return "Host alias cannot be empty."
+        case .hostAliasLooksLikeOption:
+            return "Host alias cannot start with “-” (it would be read as an ssh option)."
         case .emptyControlPath:
             return "Control path cannot be empty."
         case .invalidHealthCheckInterval:

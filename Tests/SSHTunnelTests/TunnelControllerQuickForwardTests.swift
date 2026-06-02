@@ -371,6 +371,53 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedQuickForwardIsNotCancelledOnLaterAdopt() async {
+        // A quick forward that fails to establish (`-O forward` exits non-zero)
+        // must NOT be recorded as applied. Otherwise, when the controller later
+        // adopts the still-live master, `cancelStaleQuickForwards` issues a
+        // spurious `-O cancel` for a port the master never opened.
+        var settings = makeTestSettings()
+        let forwardId = UUID()
+        settings.quickForwards = [QuickForward(id: forwardId, remotePort: 8080, localPort: 9000)]
+
+        let masterClient = StubSSHMasterClient()
+        let controller = TunnelController(
+            settings: settings,
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            masterClient: masterClient,
+            portChecker: StubPortChecker(),
+            forwardHealthChecker: StubForwardHealthChecker(),
+            startsMonitoring: false
+        )
+
+        // Fresh start: the forward fails to come up on the spawned master.
+        masterClient.addForwardResults = [SSHResult(exitCode: 255, stdout: "", stderr: "forward failed")]
+        masterClient.checkResults = [preCheckMiss, masterReady]
+        await controller.startTunnel()
+        XCTAssertEqual(controller.state, .connected)
+        XCTAssertEqual(masterClient.addForwardCalls.count, 1, "an attempt is still made")
+
+        // Network blip, then the user removes the forward while not connected.
+        controller.state = .disconnected
+        var updated = controller.settings
+        updated.quickForwards.removeAll()
+        controller.updateSettings(updated)
+        try? await Task.sleep(for: .milliseconds(50))
+
+        // Recovery: adopt the still-alive master. The failed forward was never
+        // applied, so there must be nothing to cancel.
+        masterClient.checkResults = [masterReady]
+        await controller.startTunnel()
+        XCTAssertEqual(controller.state, .connected)
+
+        XCTAssertTrue(
+            masterClient.removeForwardCalls.isEmpty,
+            "a forward that failed to apply must not be cancelled as if it were live"
+        )
+    }
+
+    @MainActor
     func testChangingRemotePortCancelsOldAndAddsNew() async {
         var settings = makeTestSettings()
         let forwardId = UUID()
