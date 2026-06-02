@@ -56,18 +56,35 @@ public enum UpdateCheckError: Error, LocalizedError {
 
 /// Queries the GitHub Releases REST API for the latest published release.
 public struct GitHubReleaseFetcher: ReleaseFetching {
+    /// The repository releases are published to — the single source of truth
+    /// shared with the README and the release workflow.
+    public static let defaultOwner = "christestet"
+    public static let defaultRepo = "ssh-tunnel"
+
     let owner: String
     let repo: String
     private let session: URLSession
 
-    public init(owner: String = "christestet", repo: String = "ssh-tunnel", session: URLSession = .shared) {
+    public init(owner: String = defaultOwner, repo: String = defaultRepo, session: URLSession = .shared) {
         self.owner = owner
         self.repo = repo
         self.session = session
     }
 
+    /// Builds the `releases/latest` endpoint via `URLComponents` so the path is
+    /// percent-encoded rather than force-unwrapped from string interpolation.
+    public static func latestReleaseURL(owner: String, repo: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "api.github.com"
+        components.path = "/repos/\(owner)/\(repo)/releases/latest"
+        return components.url
+    }
+
     public func fetchLatestRelease() async throws -> GitHubRelease {
-        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest")!
+        guard let url = Self.latestReleaseURL(owner: owner, repo: repo) else {
+            throw UpdateCheckError.invalidResponse
+        }
         var request = URLRequest(url: url)
         // GitHub requires a User-Agent and recommends pinning the API version
         // and Accept header.

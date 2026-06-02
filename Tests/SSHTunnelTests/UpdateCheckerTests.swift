@@ -353,6 +353,17 @@ final class UpdateCheckerTests: XCTestCase {
 
     // MARK: - JSON decoding
 
+    func testLatestReleaseURLPinsTheEndpoint() {
+        let url = GitHubReleaseFetcher.latestReleaseURL(
+            owner: GitHubReleaseFetcher.defaultOwner,
+            repo: GitHubReleaseFetcher.defaultRepo
+        )
+        XCTAssertEqual(
+            url?.absoluteString,
+            "https://api.github.com/repos/christestet/ssh-tunnel/releases/latest"
+        )
+    }
+
     func testDecodesRealGitHubPayload() throws {
         let json = """
         {

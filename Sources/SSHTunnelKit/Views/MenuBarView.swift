@@ -199,7 +199,7 @@ public struct MenuBarView: View {
                     }
                     .keyboardShortcut("q", modifiers: .command)
                 } label: {
-                    Label("More", systemImage: "ellipsis")
+                    Label("More", systemImage: "ellipsis.circle")
                 }
                 .menuIndicator(.hidden)
                 .help("More")

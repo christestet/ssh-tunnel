@@ -7,7 +7,6 @@ import SwiftUI
 /// configuration in the detail pane.
 struct UpdatesSettingsView: View {
     @Bindable var updateChecker: UpdateChecker
-    @State private var isChecking = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -18,15 +17,15 @@ struct UpdatesSettingsView: View {
                 .toggleStyle(.switch)
             HStack {
                 Button {
-                    checkNow()
+                    Task { await updateChecker.checkForUpdates() }
                 } label: {
-                    if isChecking {
+                    if updateChecker.isChecking {
                         ProgressView().controlSize(.small)
                     } else {
                         Text("Check Now")
                     }
                 }
-                .disabled(isChecking)
+                .disabled(updateChecker.isChecking)
                 Spacer()
                 if let date = updateChecker.lastCheckDate {
                     Text("Last checked \(date.formatted(.relative(presentation: .named)))")
@@ -83,14 +82,6 @@ struct UpdatesSettingsView: View {
             Label("You're up to date", systemImage: "checkmark.circle.fill")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func checkNow() {
-        Task {
-            isChecking = true
-            await updateChecker.checkForUpdates()
-            isChecking = false
         }
     }
 }
