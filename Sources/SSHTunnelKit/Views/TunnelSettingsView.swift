@@ -591,7 +591,7 @@ private struct DetectedLocalForwardRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: Constants.settingsGroupCornerRadius)
-                .fill(Color.primary.opacity(0.04))
+                .fill(.quinary)
         )
     }
 }
@@ -637,7 +637,7 @@ private struct QuickForwardRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: Constants.settingsGroupCornerRadius)
-                .fill(Color.primary.opacity(0.04))
+                .fill(.quinary)
         )
     }
 
@@ -680,10 +680,10 @@ private struct PortBadge: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.08))
+                    .fill(.quaternary)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
+                            .strokeBorder(.tertiary, lineWidth: 1)
                     )
             )
     }
