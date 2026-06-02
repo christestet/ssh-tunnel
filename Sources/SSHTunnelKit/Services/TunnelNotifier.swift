@@ -64,11 +64,9 @@ struct UserNotificationTunnelNotifier: TunnelNotifying {
                 content: content,
                 trigger: nil
             )
-            // `add(_:)` is the legacy completion-handler form (default nil). The
-            // async variant requires sending `UNNotificationRequest` across an
-            // actor hop, but that type isn't Sendable, so this remains the
-            // simplest correct call.
-            UNUserNotificationCenter.current().add(request)
+            // The request is built here inside the Task, so there's no
+            // non-Sendable hop — use the async `add(_:)` directly.
+            try? await UNUserNotificationCenter.current().add(request)
         }
     }
 
