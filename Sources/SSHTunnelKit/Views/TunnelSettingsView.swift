@@ -23,12 +23,15 @@ enum SettingsNumberDisplay {
 
 public struct TunnelListSettingsView: View {
     @Bindable var manager: TunnelManager
+    let updateChecker: UpdateChecker
 
     @State private var selectedId: UUID?
     @State private var isConfirmingDelete = false
+    @State private var showingUpdates = false
 
-    public init(manager: TunnelManager, initialSelection: UUID?) {
+    public init(manager: TunnelManager, updateChecker: UpdateChecker, initialSelection: UUID?) {
         self.manager = manager
+        self.updateChecker = updateChecker
         _selectedId = State(initialValue: initialSelection)
     }
 
@@ -89,6 +92,21 @@ public struct TunnelListSettingsView: View {
                     .help("Move Tunnel Down")
 
                     Spacer()
+
+                    Button {
+                        showingUpdates = true
+                    } label: {
+                        Image(systemName: updateChecker.availableUpdate == nil
+                            ? "info.circle"
+                            : "arrow.down.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(updateChecker.availableUpdate == nil ? .secondary : .tint)
+                    }
+                    .accessibilityLabel("About & Updates")
+                    .help("About & Updates")
+                    .popover(isPresented: $showingUpdates, arrowEdge: .bottom) {
+                        UpdatesSettingsView(updateChecker: updateChecker)
+                    }
                 }
                 .buttonStyle(.borderless)
                 .padding(.horizontal, 14)

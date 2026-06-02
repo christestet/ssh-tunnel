@@ -73,6 +73,17 @@ unsigned apps; instead either:
 
 Locally built apps (`make install`) are not quarantined and open normally.
 
+### Staying up to date
+
+The app checks GitHub Releases for a newer version automatically (at most once
+per 24 hours) and on demand via **Check for Updates** in the menu bar action
+bar. When a newer release exists, an **Update available** banner appears in the
+menu and a notification is posted; both open the release page so you can
+download the new DMG and drag it to Applications. Automatic checks can be turned
+off from the **About & Updates** popover in Settings (the ⓘ button in the tunnel
+list footer). Because the app is un-notarized, updates are always installed
+manually — there is no silent self-update.
+
 You can also build and install locally:
 
 ```bash

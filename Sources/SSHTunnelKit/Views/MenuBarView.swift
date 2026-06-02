@@ -7,16 +7,23 @@ import SwiftUI
 /// floating action bar at the bottom (custom chrome).
 public struct MenuBarView: View {
     @Bindable var manager: TunnelManager
+    let updateChecker: UpdateChecker
+    @State private var isCheckingForUpdates = false
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
-    public init(manager: TunnelManager) {
+    public init(manager: TunnelManager, updateChecker: UpdateChecker) {
         self.manager = manager
+        self.updateChecker = updateChecker
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             header
+            if let update = updateChecker.availableUpdate {
+                Divider()
+                updateBanner(update)
+            }
             Divider()
             tunnelList
             Divider()
@@ -24,6 +31,38 @@ public struct MenuBarView: View {
         }
         .frame(width: Constants.menuBarPanelWidth)
         .frame(minHeight: Constants.menuBarPanelMinHeight)
+    }
+
+    /// Surfaces a newer GitHub release. Tapping opens the release page (notes +
+    /// DMG) in the browser — the app is un-notarized, so we hand off to the
+    /// user's existing download/drag-install flow rather than self-updating.
+    private func updateBanner(_ update: UpdateChecker.AvailableUpdate) -> some View {
+        Button {
+            NSWorkspace.shared.open(update.releaseURL)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available \(update.version)")
+                        .font(.subheadline.weight(.semibold))
+                    Text("View release and download")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.forward.app")
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help("Open the release page for \(update.version)")
+        .accessibilityLabel("Update available \(update.version). Open release page.")
     }
 
     private var header: some View {
@@ -131,6 +170,20 @@ public struct MenuBarView: View {
                 Spacer()
 
                 Button {
+                    checkForUpdates()
+                } label: {
+                    if isCheckingForUpdates {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(isCheckingForUpdates)
+                .help("Check for Updates")
+                .accessibilityLabel("Check for Updates")
+
+                Button {
                     copyDebugLog()
                 } label: {
                     Label("Copy Debug Log", systemImage: "doc.on.clipboard")
@@ -174,6 +227,14 @@ public struct MenuBarView: View {
     private func openSettingsWindow() {
         openSettings()
         NSApp.activate()
+    }
+
+    private func checkForUpdates() {
+        Task {
+            isCheckingForUpdates = true
+            await updateChecker.checkForUpdates()
+            isCheckingForUpdates = false
+        }
     }
 
     /// Copies the recent in-memory debug log to the clipboard so the user can
@@ -749,5 +810,8 @@ private struct StatusDot: View {
         maxBackoff: 60,
         autostartOnLogin: false
     )
-    MenuBarView(manager: TunnelManager(settingsStore: TunnelSettingsStore(tunnels: [tunnel])))
+    MenuBarView(
+        manager: TunnelManager(settingsStore: TunnelSettingsStore(tunnels: [tunnel])),
+        updateChecker: UpdateChecker(settings: UpdateSettingsStore())
+    )
 }

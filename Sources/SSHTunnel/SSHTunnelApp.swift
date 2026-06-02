@@ -13,13 +13,33 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
+
+    /// Opens the release page when the user taps an "Update available"
+    /// notification. The URL travels in `userInfo` from
+    /// `UserNotificationUpdateNotifier`.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let urlString = userInfo[UserNotificationUpdateNotifier.releaseURLKey] as? String,
+              let url = URL(string: urlString) else { return }
+        await MainActor.run { NSWorkspace.shared.open(url) }
+    }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var manager: TunnelManager?
+    weak var updateChecker: UpdateChecker?
     private let notificationPresenter = NotificationPresenter()
     private let instanceGuard = SingleInstanceGuard()
+    private var updateLoopTask: Task<Void, Never>?
+
+    /// How often the periodic loop wakes to re-evaluate whether an automatic
+    /// check is due. The 24h gate lives in `UpdateChecker.automaticCheckIfDue`,
+    /// so a frequent wake-up is cheap — almost every tick is a no-op.
+    private static let updateLoopInterval: Duration = .seconds(3600)
 
     /// Single-instance enforcement via an advisory file lock — race-free, unlike
     /// enumerating peers and terminating them (which can make both instances
@@ -42,12 +62,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UNUserNotificationCenter.current().delegate = notificationPresenter
         Task { @MainActor [weak self] in
             await self?.manager?.start()
+            // Initial, gated update check after launch.
+            await self?.updateChecker?.automaticCheckIfDue()
         }
+        startUpdateLoop()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         TunnelLog.shared.log(.notice, .lifecycle, "app terminating")
+        updateLoopTask?.cancel()
         manager?.stopSynchronously()
+    }
+
+    /// Wakes roughly hourly and asks the checker whether a check is due. The
+    /// 24h gate guarantees at most one network request per day.
+    private func startUpdateLoop() {
+        updateLoopTask?.cancel()
+        updateLoopTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.updateLoopInterval)
+                if Task.isCancelled { return }
+                await self?.updateChecker?.automaticCheckIfDue()
+            }
+        }
     }
 }
 
@@ -55,17 +92,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct SSHTunnelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var manager: TunnelManager
+    @State private var updateChecker: UpdateChecker
 
     init() {
         let settingsStore = TunnelSettingsStore()
         let manager = TunnelManager(settingsStore: settingsStore)
+        let updateChecker = UpdateChecker(settings: UpdateSettingsStore())
         _manager = State(initialValue: manager)
+        _updateChecker = State(initialValue: updateChecker)
         appDelegate.manager = manager
+        appDelegate.updateChecker = updateChecker
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(manager: manager)
+            MenuBarView(manager: manager, updateChecker: updateChecker)
         } label: {
             // Template image + SwiftUI tint: the glyph adapts to light/dark and
             // the Tahoe menu-bar appearance automatically, and state is conveyed
@@ -78,6 +119,7 @@ struct SSHTunnelApp: App {
         Settings {
             TunnelListSettingsView(
                 manager: manager,
+                updateChecker: updateChecker,
                 initialSelection: manager.settingsSelection
             )
             // Matches Constants.settingsMinWidth/Height; the NavigationSplitView
