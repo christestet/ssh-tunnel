@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/christestet/ssh-tunnel/compare/v2.2.1...v2.2.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* stabilize release DMG build ([a14b726](https://github.com/christestet/ssh-tunnel/commit/a14b726926eeccb82969028442e5c75ff8bd7109))
+
 ## [2.2.1](https://github.com/christestet/ssh-tunnel/compare/v2.2.0...v2.2.1) (2026-06-02)
 
 
