@@ -9,3 +9,5 @@ SSHTunnel.app/
 *.xcworkspace/
 xcuserdata/
 DerivedData/
+
+dist/

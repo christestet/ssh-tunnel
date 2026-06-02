@@ -88,6 +88,13 @@ SSH processes.
 No full Xcode install is required — the app builds straight from the Swift
 sources with `swiftc`.
 
+## GitHub releases
+
+Release DMGs are published on GitHub Releases. Until this project has an Apple
+Developer ID certificate, those DMGs are unsigned and ad-hoc signed only. On
+first launch, macOS Gatekeeper may require you to right-click the app and choose
+**Open**, then confirm that you want to open it.
+
 ## Configure your SSH host
 
 The app reads everything it needs from `~/.ssh/config`. You can use any

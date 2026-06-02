@@ -1,0 +1,19 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "Resources/Info.plist"
+        },
+        {
+          "type": "generic",
+          "path": "Tests/SSHTunnelTests/BuildMetadataTests.swift"
+        }
+      ]
+    }
+  }
+}
