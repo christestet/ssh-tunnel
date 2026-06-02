@@ -16,7 +16,7 @@ final class BuildMetadataTests: XCTestCase {
         XCTAssertEqual(plist["LSUIElement"] as? Bool, true)
         XCTAssertEqual(plist["NSPrincipalClass"] as? String, "NSApplication")
         XCTAssertEqual(plist["LSMinimumSystemVersion"] as? String, "26.0")
-        XCTAssertEqual(plist["CFBundleShortVersionString"] as? String, "2.1.5") // x-release-please-version
+        XCTAssertEqual(plist["CFBundleShortVersionString"] as? String, "2.2.0") // x-release-please-version
         XCTAssertTrue(
             try XCTUnwrap(plist["CFBundleVersion"] as? String)
                 .range(of: #"^\d+$"#, options: .regularExpression) != nil
