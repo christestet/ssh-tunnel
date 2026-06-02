@@ -15,6 +15,7 @@ public final class TunnelManager {
     private let notifier: TunnelNotifying
     private let loginItemManager: LoginItemManaging
     private var networkMonitor: NetworkMonitor?
+    private var settingsObserver: NSObjectProtocol?
 
     public convenience init(settingsStore: TunnelSettingsStore) {
         self.init(
@@ -66,7 +67,11 @@ public final class TunnelManager {
         // Automatically monitor network changes
         self.networkMonitor = NetworkMonitor(tunnelManager: self)
 
-        NotificationCenter.default.addObserver(
+        // Keep the token so we can deregister on shutdown/dealloc. Leaking it
+        // means every manager ever created keeps reacting to the shared
+        // `NotificationCenter`, which cross-contaminates tests and lives for the
+        // app's lifetime.
+        settingsObserver = NotificationCenter.default.addObserver(
             forName: .tunnelSettingsChanged,
             object: nil,
             queue: .main
@@ -195,6 +200,10 @@ public final class TunnelManager {
 
     /// Best-effort blocking shutdown for `applicationWillTerminate`.
     public func stopSynchronously(timeout: TimeInterval = 3) {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+            self.settingsObserver = nil
+        }
         networkMonitor?.stop()
         for ctrl in controllers {
             ctrl.terminateMasterForShutdown()

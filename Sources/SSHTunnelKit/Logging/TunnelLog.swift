@@ -82,6 +82,16 @@ public enum LogLevel: Int, Sendable, Comparable, CustomStringConvertible, Codabl
     }
 }
 
+/// Shared ISO-8601 formatter for log export. Formatters are expensive to
+/// allocate, so we keep one rather than building a new one per line (bulk export
+/// can render thousands of entries). `string(from:)` is thread-safe; the options
+/// are configured once here and never mutated, hence `nonisolated(unsafe)`.
+nonisolated(unsafe) private let logTimestampFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+}()
+
 /// A single structured log record. Immutable and `Sendable` so it can be
 /// shipped between actors and stored in the in-memory recorder for in-app
 /// inspection/export.
@@ -110,9 +120,7 @@ public struct LogEntry: Sendable, Equatable {
 
     /// One-line, human-readable rendering used by the in-app log export.
     public func formatted() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let stamp = formatter.string(from: date)
+        let stamp = logTimestampFormatter.string(from: date)
         let scope = tunnel.map { " [\($0)]" } ?? ""
         return "\(stamp) \(level) \(category.rawValue)\(scope): \(message)"
     }

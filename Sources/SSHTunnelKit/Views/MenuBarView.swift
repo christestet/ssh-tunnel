@@ -17,9 +17,9 @@ public struct MenuBarView: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.4)
+            Divider()
             tunnelList
-            Divider().opacity(0.4)
+            Divider()
             actionBar
         }
         .frame(width: Constants.menuBarPanelWidth)
@@ -147,7 +147,7 @@ public struct MenuBarView: View {
 
                 Button {
                     openWindow(id: HelpScene.windowID)
-                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    NSApp.activate()
                 } label: {
                     Label("Help", systemImage: "questionmark.circle")
                 }
@@ -173,7 +173,7 @@ public struct MenuBarView: View {
 
     private func openSettingsWindow() {
         openSettings()
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     /// Copies the recent in-memory debug log to the clipboard so the user can
@@ -356,7 +356,7 @@ private struct OverallStateBadge: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Color.primary.opacity(0.06), in: .capsule)
+        .background(.quaternary, in: .capsule)
     }
 }
 
@@ -459,11 +459,11 @@ private struct TunnelRow: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: Constants.menuBarRowCornerRadius)
-                .fill(Color.primary.opacity(0.04))
+                .fill(.quinary)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Constants.menuBarRowCornerRadius)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                .strokeBorder(.quaternary, lineWidth: 1)
         )
         .contextMenu {
             Button(controller.isActive ? "Stop" : "Start") {
@@ -545,14 +545,14 @@ private struct TunnelRow: View {
     private func openSettingsWindow() {
         manager.settingsSelection = controller.id
         openSettings()
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     private func editInSettings(_ item: PortPillItem) {
         manager.settingsSelection = controller.id
         manager.settingsQuickForwardFocus = item.quickForwardID
         openSettings()
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     private func addQuickForward() {

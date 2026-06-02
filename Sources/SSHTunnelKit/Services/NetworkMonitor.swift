@@ -10,16 +10,22 @@ protocol NetworkPathSource: Sendable {
 }
 
 /// Real implementation backed by `NWPathMonitor`.
+///
+/// `NWPathMonitor` now conforms to `AsyncSequence`, so we iterate it directly
+/// instead of bridging `pathUpdateHandler` through a `DispatchQueue`. The
+/// `AsyncStream` is kept only to adapt `NWPath` to the `Bool` the protocol
+/// vends; cancelling the consuming task ends iteration and tears the monitor
+/// down.
 final class SystemNetworkPathSource: NetworkPathSource, Sendable {
     func paths() -> AsyncStream<Bool> {
         AsyncStream { continuation in
-            let monitor = NWPathMonitor()
-            let queue = DispatchQueue(label: "ssh-tunnel.network-monitor")
-            monitor.pathUpdateHandler = { path in
-                continuation.yield(path.status == .satisfied)
+            let task = Task {
+                for await path in NWPathMonitor() {
+                    continuation.yield(path.status == .satisfied)
+                }
+                continuation.finish()
             }
-            continuation.onTermination = { _ in monitor.cancel() }
-            monitor.start(queue: queue)
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

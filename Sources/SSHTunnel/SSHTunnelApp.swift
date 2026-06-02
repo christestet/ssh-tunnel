@@ -19,18 +19,22 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var manager: TunnelManager?
     private let notificationPresenter = NotificationPresenter()
+    private let instanceGuard = SingleInstanceGuard()
 
-    /// Single-instance enforcement.
+    /// Single-instance enforcement via an advisory file lock — race-free, unlike
+    /// enumerating peers and terminating them (which can make both instances
+    /// quit when launched simultaneously).
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard let bundleId = Bundle.main.bundleIdentifier else { return }
+        if instanceGuard.acquire(identifier: bundleId) { return }
+
+        // Another instance holds the lock; surface it and exit.
         let me = ProcessInfo.processInfo.processIdentifier
-        let others = NSRunningApplication.runningApplications(
+        let existing = NSRunningApplication.runningApplications(
             withBundleIdentifier: bundleId
-        ).filter { $0.processIdentifier != me }
-        if let existing = others.first {
-            existing.activate()
-            NSApp.terminate(nil)
-        }
+        ).first { $0.processIdentifier != me }
+        existing?.activate()
+        NSApp.terminate(nil)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -76,7 +80,12 @@ struct SSHTunnelApp: App {
                 manager: manager,
                 initialSelection: manager.settingsSelection
             )
+            // Matches Constants.settingsMinWidth/Height; the NavigationSplitView
+            // inside needs a floor or it opens uncomfortably small.
+            .frame(minWidth: 700, minHeight: 500)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 760, height: 560)
 
         Window("How To Use SSH Tunnel", id: HelpScene.windowID) {
             HelpView()
