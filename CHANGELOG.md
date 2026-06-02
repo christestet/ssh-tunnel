@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.3](https://github.com/christestet/ssh-tunnel/compare/v2.2.2...v2.2.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* Clarify menu keyboard shortcuts in README ([d55ff1c](https://github.com/christestet/ssh-tunnel/commit/d55ff1c1242cac761b301be60d7147d3003745bf))
+* Clarify menu keyboard shortcuts in README ([688c5d9](https://github.com/christestet/ssh-tunnel/commit/688c5d9090010d7385a4144fe9fc9ce680408b25))
+
 ## [2.2.2](https://github.com/christestet/ssh-tunnel/compare/v2.2.1...v2.2.2) (2026-06-02)
 
 
