@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ssh-tunnel}",
+            "name": "Debug SSHTunnel",
+            "target": "SSHTunnel",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SSHTunnel"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ssh-tunnel}",
+            "name": "Release SSHTunnel",
+            "target": "SSHTunnel",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SSHTunnel"
+        }
+    ]
+}
