@@ -136,8 +136,8 @@ applies it immediately when the tunnel is connected.
 - Run diagnostics for required fields, `ssh -G`, SSH config forwards,
   ControlPath safety, and local port availability.
 - Integrate with macOS login items through `SMAppService`.
-- Support menu keyboard shortcuts: `Command-,` for Settings, `Command-?` for
-  Help, and `Command-Q` to quit.
+- Support menu keyboard shortcuts: `⌘ + ,` for Settings, `⌘ + ?` for
+  Help, and `⌘ + Q` to quit.
 
 ## Using The App
 
