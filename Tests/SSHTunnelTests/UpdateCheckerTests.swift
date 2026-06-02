@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import XCTest
 @testable import SSHTunnelKit
 
@@ -10,23 +11,18 @@ final class FakeReleaseFetcher: ReleaseFetching, @unchecked Sendable {
         case failure(Error)
     }
 
-    private let lock = NSLock()
-    private var outcome: Outcome
-    private var _callCount = 0
+    private let outcome: Outcome
+    // `Mutex.withLock` is async-safe scoped locking; `NSLock.lock()/unlock()`
+    // are unavailable from the `async` fetch method under Swift 6.
+    private let callCountStorage = Mutex(0)
 
     init(_ outcome: Outcome) { self.outcome = outcome }
 
-    var callCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return _callCount
-    }
+    var callCount: Int { callCountStorage.withLock { $0 } }
 
     func fetchLatestRelease() async throws -> GitHubRelease {
-        lock.lock()
-        _callCount += 1
-        let current = outcome
-        lock.unlock()
-        switch current {
+        callCountStorage.withLock { $0 += 1 }
+        switch outcome {
         case let .success(release): return release
         case let .failure(error): throw error
         }
