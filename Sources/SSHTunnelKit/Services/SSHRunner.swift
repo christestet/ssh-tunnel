@@ -31,11 +31,29 @@ extension SSHRunning {
 protocol SSHMasterClienting: Sendable {
     func resolveOptions(forHost host: String) async -> SSHHostOptions?
     func check(host: String, controlPath: String, timeout: TimeInterval) async -> SSHResult
-    func startMaster(host: String, controlPath: String) throws -> SSHLongRunningProcess
+    /// Spawns the `ssh -N -M` master. When `clearConfigForwards` is true, the
+    /// master is started with `ClearAllForwardings=yes` so ssh binds *none* of
+    /// the config `LocalForward` ports natively — the caller then re-applies
+    /// each forward via `addForward` (used to remap a config forward onto a
+    /// free local port when its configured port collides).
+    func startMaster(host: String, controlPath: String, clearConfigForwards: Bool) throws -> SSHLongRunningProcess
     func exit(host: String, controlPath: String) async -> SSHResult
     func exitSynchronously(host: String, controlPath: String, timeout: TimeInterval) -> SSHResult
-    func addForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult
+    func addForward(remotePort: Int, localPort: Int, remoteHost: String, target: SSHControlTarget, controlPath: String) async -> SSHResult
     func removeForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult
+}
+
+extension SSHMasterClienting {
+    /// Back-compat convenience: spawn a master that lets ssh bind its config
+    /// forwards natively (today's default behaviour).
+    func startMaster(host: String, controlPath: String) throws -> SSHLongRunningProcess {
+        try startMaster(host: host, controlPath: controlPath, clearConfigForwards: false)
+    }
+
+    /// Back-compat convenience for forwards to `localhost` (quick forwards).
+    func addForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult {
+        await addForward(remotePort: remotePort, localPort: localPort, remoteHost: "localhost", target: target, controlPath: controlPath)
+    }
 }
 
 struct SSHControlTarget: Equatable, Sendable {
@@ -94,16 +112,21 @@ struct OpenSSHMasterClient: SSHMasterClienting {
         ], timeout: timeout)
     }
 
-    func startMaster(host: String, controlPath: String) throws -> SSHLongRunningProcess {
-        try runner.startLongRunning(arguments: [
+    func startMaster(host: String, controlPath: String, clearConfigForwards: Bool) throws -> SSHLongRunningProcess {
+        var arguments = [
             "-N", "-M",
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
-            "-o", "ConnectTimeout=10",
-            "-S", controlPath,
-            host
-        ])
+            "-o", "ConnectTimeout=10"
+        ]
+        if clearConfigForwards {
+            // Suppress ssh's native binding of every config LocalForward so we
+            // can re-apply them ourselves (some on a remapped free local port).
+            arguments += ["-o", "ClearAllForwardings=yes"]
+        }
+        arguments += ["-S", controlPath, host]
+        return try runner.startLongRunning(arguments: arguments)
     }
 
     func exit(host: String, controlPath: String) async -> SSHResult {
@@ -127,11 +150,11 @@ struct OpenSSHMasterClient: SSHMasterClienting {
         return SSHResult(exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr)
     }
 
-    func addForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult {
+    func addForward(remotePort: Int, localPort: Int, remoteHost: String, target: SSHControlTarget, controlPath: String) async -> SSHResult {
         await runner.run(arguments: [
             "-S", controlPath,
             "-O", "forward",
-            "-L", "\(localPort):localhost:\(remotePort)"
+            "-L", "\(localPort):\(remoteHost):\(remotePort)"
         ] + target.arguments, timeout: 5)
     }
 

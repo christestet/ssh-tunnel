@@ -2,6 +2,17 @@ import Foundation
 import Observation
 import os
 
+/// A pending request for the user to resolve a collision on a config
+/// `LocalForward` port. The configured local port is already bound by a foreign
+/// process (`conflict`); `suggestedPort` is a free local port we offer as a
+/// session-only remap for `forward`.
+struct PortConflictPrompt: Identifiable {
+    let id = UUID()
+    let forward: ForwardInfo
+    let conflict: PortConflict
+    let suggestedPort: Int
+}
+
 @MainActor
 @Observable
 final class TunnelController: Identifiable {
@@ -16,6 +27,20 @@ final class TunnelController: Identifiable {
     var lastError: String?
     private(set) var nextReconnectAt: Date?
     private(set) var resolvedOptions: SSHHostOptions?
+
+    /// Set while a config-forward port collision is awaiting the user's choice.
+    /// The UI binds a prompt to this; `resolvePortConflict` clears it.
+    private(set) var pendingPortConflict: PortConflictPrompt?
+
+    /// Session-only remap of a config `LocalForward`'s configured local port →
+    /// the free local port the user accepted. Not persisted to settings; the
+    /// collision is re-evaluated on the next user-initiated start (cleared in
+    /// `stopTunnel`) but kept across automatic reconnects so transient drops
+    /// don't re-prompt.
+    private(set) var activeConfigForwardOverrides: [Int: Int] = [:]
+
+    /// Continuation the start flow parks on while `pendingPortConflict` is shown.
+    private var conflictContinuation: CheckedContinuation<Int?, Never>?
 
     var forwardInfos: [ForwardInfo] {
         let quickInfos = settings.quickForwards.compactMap { qf -> ForwardInfo? in
@@ -44,9 +69,14 @@ final class TunnelController: Identifiable {
             labels[entry.localPort] = entry.label
         }
         return (resolvedOptions?.forwardInfos ?? []).map { info in
-            ForwardInfo(
-                localPort: info.localPort,
+            // Surface the effective (possibly remapped) local port so port
+            // pills, forwardedPorts, and health checks all see the port that's
+            // actually bound. Labels are keyed by the original configured port.
+            let effectiveLocalPort = activeConfigForwardOverrides[info.localPort] ?? info.localPort
+            return ForwardInfo(
+                localPort: effectiveLocalPort,
                 remotePort: info.remotePort,
+                remoteHost: info.remoteHost,
                 label: labelsByPort[info.localPort] ?? info.label
             )
         }
@@ -332,6 +362,34 @@ final class TunnelController: Identifiable {
         }
     }
 
+    /// Applies every config `LocalForward` via `-O forward` on the live master.
+    /// Used only in managed-forwards mode (master started with
+    /// `ClearAllForwardings`): conflicting forwards land on their session
+    /// override port, the rest on their configured port. Remote host/port come
+    /// from the parsed config so forwards to non-local endpoints (e.g.
+    /// `db.internal:5432`) work — not just `localhost`.
+    private func applyConfigForwards() async {
+        // `sshConfigForwardInfos` already maps each configured port to its
+        // effective (possibly overridden) local port.
+        for info in sshConfigForwardInfos {
+            guard let remotePort = info.remotePort else { continue }
+            let result = await masterClient.addForward(
+                remotePort: remotePort,
+                localPort: info.localPort,
+                remoteHost: info.remoteHost,
+                target: quickForwardControlTarget,
+                controlPath: settings.expandedControlPath
+            )
+            if result.exitCode != 0 {
+                let err = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                log(.warning, .forward, "config forward \(info.localPort)->\(info.remoteHost):\(remotePort) failed (exit \(result.exitCode)): \(err.isEmpty ? "(no stderr)" : err)")
+                lastError = "Failed to forward \(info.remoteHost):\(remotePort) to localhost:\(info.localPort): \(err.isEmpty ? "Unknown error" : err)"
+            } else {
+                log(.info, .forward, "config forward established \(info.localPort)->\(info.remoteHost):\(remotePort)")
+            }
+        }
+    }
+
     /// Cancel forwards present on the current master that are no longer in the
     /// desired set, matching on the concrete local+remote port pair.
     private func cancelStaleQuickForwards(desired: [QuickForward]) async {
@@ -490,17 +548,25 @@ final class TunnelController: Identifiable {
                 )
                 return
             case .foreignConflict(let conflict):
-                log(.error, .ports, "foreign port conflict on \(plannedPorts): \(conflict.userMessage)")
-                markFailed(conflict.userMessage)
-                return
+                // A config-forward port can be remapped onto a free local port
+                // (with the user's consent); a quick-forward-only conflict keeps
+                // the historical hard-fail. Returns false if startup must abort.
+                guard await resolveConfigForwardConflicts(plannedPorts: plannedPorts, firstConflict: conflict) else {
+                    return
+                }
             }
         }
+
+        // If we remapped any config forward, ssh must NOT bind the config
+        // forwards natively — we apply them all ourselves below.
+        let clearConfigForwards = !activeConfigForwardOverrides.isEmpty
 
         let handle: SSHLongRunningProcess
         do {
             handle = try masterClient.startMaster(
                 host: settings.hostAlias,
-                controlPath: settings.expandedControlPath
+                controlPath: settings.expandedControlPath,
+                clearConfigForwards: clearConfigForwards
             )
         } catch {
             failStartAndMaybeReconnect("Failed to spawn ssh: \(error)", isAutomaticReconnect: allowRestartWhileActive)
@@ -523,6 +589,12 @@ final class TunnelController: Identifiable {
             reconnectAttempt = 0
             lastError = nil
             nextReconnectAt = nil
+
+            // In managed-forwards mode the master bound nothing — apply every
+            // config forward ourselves (remapped ones on their override port).
+            if clearConfigForwards {
+                await applyConfigForwards()
+            }
 
             // Apply quick forwards
             await applyAllQuickForwards()
@@ -569,6 +641,10 @@ final class TunnelController: Identifiable {
         log(.info, .lifecycle, "stopTunnel (user-initiated)")
         hasRequestedConnection = false
         userInitiatedStop = true
+        // Unblock any start flow parked on a port-conflict prompt, and drop the
+        // session remaps so the next user-initiated start re-evaluates ports.
+        resolvePortConflict(localPort: nil)
+        activeConfigForwardOverrides = [:]
         reconnectTask?.cancel()
         masterWatchTask?.cancel()
         masterWatchTask = nil
@@ -771,6 +847,7 @@ final class TunnelController: Identifiable {
             _ = await masterClient.addForward(
                 remotePort: remotePort,
                 localPort: info.localPort,
+                remoteHost: info.remoteHost,
                 target: quickForwardControlTarget,
                 controlPath: settings.expandedControlPath
             )
@@ -826,6 +903,81 @@ final class TunnelController: Identifiable {
         in Settings — the default (~/.ssh/control-sshtunnelapp-%C) is namespaced to \
         avoid this.
         """
+    }
+
+    /// Handles a foreign port conflict surfaced during startup. Config-forward
+    /// ports get an interactive remap prompt (show the holder, offer a free
+    /// port, let the user accept or cancel); a conflict isolated to a
+    /// quick-forward port keeps the historical hard-fail behaviour. Accepted
+    /// remaps are recorded in `activeConfigForwardOverrides`. Returns true if
+    /// startup should proceed, false if it must abort.
+    private func resolveConfigForwardConflicts(
+        plannedPorts: [Int],
+        firstConflict: PortConflict
+    ) async -> Bool {
+        // Use the raw resolved options (original configured ports), since a
+        // prompt maps a *configured* port to a free one.
+        let configForwards = resolvedOptions?.forwardInfos ?? []
+        let configPortSet = Set(configForwards.map(\.localPort))
+        let configConflicts = await portChecker.conflicts(among: plannedPorts)
+            .filter { configPortSet.contains($0.port) }
+
+        guard !configConflicts.isEmpty else {
+            // Conflict is on a quick-forward port (or vanished after reaping) —
+            // historical behaviour: surface as a hard failure.
+            log(.error, .ports, "foreign port conflict on \(plannedPorts): \(firstConflict.userMessage)")
+            markFailed(firstConflict.userMessage)
+            return false
+        }
+
+        for conflict in configConflicts {
+            guard let forward = configForwards.first(where: { $0.localPort == conflict.port }) else { continue }
+            guard let suggestedPort = await portChecker.findFreePort(in: 1024...65535) else {
+                log(.error, .ports, "config forward port \(conflict.port) in use and no free port available to remap")
+                markFailed(conflict.userMessage)
+                return false
+            }
+            log(.notice, .ports, "config forward port \(conflict.port) in use — prompting to remap (suggesting \(suggestedPort))")
+            let chosen = await promptForPortConflict(
+                forward: forward,
+                conflict: conflict,
+                suggestedPort: suggestedPort
+            )
+            guard let chosen else {
+                log(.notice, .ports, "user cancelled remap of config forward port \(conflict.port)")
+                markFailed(conflict.userMessage)
+                return false
+            }
+            activeConfigForwardOverrides[conflict.port] = chosen
+            log(.info, .ports, "config forward port \(conflict.port) remapped to \(chosen) for this session")
+        }
+        return true
+    }
+
+    /// Publishes a `PortConflictPrompt` and suspends until the UI calls
+    /// `resolvePortConflict`. Returns the chosen local port, or nil if cancelled.
+    private func promptForPortConflict(
+        forward: ForwardInfo,
+        conflict: PortConflict,
+        suggestedPort: Int
+    ) async -> Int? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
+            conflictContinuation = continuation
+            pendingPortConflict = PortConflictPrompt(
+                forward: forward,
+                conflict: conflict,
+                suggestedPort: suggestedPort
+            )
+        }
+    }
+
+    /// Answers the pending port-conflict prompt. Pass the local port to use for
+    /// the remap, or nil to cancel the start. No-op if no prompt is pending.
+    func resolvePortConflict(localPort: Int?) {
+        guard let continuation = conflictContinuation else { return }
+        conflictContinuation = nil
+        pendingPortConflict = nil
+        continuation.resume(returning: localPort)
     }
 
     private func portResolver() -> PortConflictResolver {

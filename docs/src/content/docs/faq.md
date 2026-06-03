@@ -43,6 +43,14 @@ the tunnel **Active** switch off and on to start fresh. See
 Use [Quick Forwards](/ssh-tunnel/guides/quick-forwards/). The app assigns a free
 local port and reapplies the forward after reconnects and restarts.
 
+### A config LocalForward port is already in use — what happens?
+
+The app shows which process holds the port and offers a free local port to use
+for this session. Accept it to connect with that forward remapped, or cancel to
+leave the tunnel stopped. Your `~/.ssh/config` is never edited, and the original
+port is re-checked next time you start the tunnel. See
+[Port conflicts](/ssh-tunnel/guides/health-checks/#port-conflicts).
+
 ### Where are the logs?
 
 `~/Library/Logs/SSHTunnel/tunnel.log`, plus unified logging under the subsystem

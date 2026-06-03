@@ -200,7 +200,7 @@ final class TunnelControllerAdoptionTests: XCTestCase {
         ])
         let checker = StubPortChecker()
         // Foreign daemon — command is not ssh, argv unrelated.
-        checker.conflicts[6333] = PortConflict(
+        checker.conflictsByPort[6333] = PortConflict(
             port: 6333,
             pid: 999_999,
             command: "qdrant",
@@ -215,7 +215,10 @@ final class TunnelControllerAdoptionTests: XCTestCase {
             portReleaseGrace: 0
         )
 
-        await controller.startTunnel()
+        // 6333 is a config LocalForward, so a foreign holder now prompts for a
+        // remap. Cancelling keeps the historical "not killed, reports failure"
+        // outcome.
+        await startTunnelResolvingConflict(controller, with: nil)
 
         XCTAssertEqual(controller.state, .failed)
         XCTAssertEqual(runner.longRunningCalls.count, 0,
@@ -237,7 +240,7 @@ final class TunnelControllerAdoptionTests: XCTestCase {
             preCheckMiss
         ])
         let checker = StubPortChecker()
-        checker.conflicts[6333] = PortConflict(
+        checker.conflictsByPort[6333] = PortConflict(
             port: 6333,
             pid: 999_998,
             command: "ssh",
@@ -253,7 +256,9 @@ final class TunnelControllerAdoptionTests: XCTestCase {
             portReleaseGrace: 0
         )
 
-        await controller.startTunnel()
+        // Config-forward port held by a foreign ssh → prompt; cancel to keep the
+        // "not killed, PID surfaced" outcome.
+        await startTunnelResolvingConflict(controller, with: nil)
 
         XCTAssertEqual(controller.state, .failed)
         XCTAssertEqual(runner.longRunningCalls.count, 0)

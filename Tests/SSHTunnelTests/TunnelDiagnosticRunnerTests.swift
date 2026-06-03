@@ -96,7 +96,7 @@ final class TunnelDiagnosticRunnerTests: XCTestCase {
         settings.name = "Ports"
         let runner = StubSSHRunner(results: [SSHResult(exitCode: 0, stdout: sshGOutput(), stderr: "")])
         let checker = StubPortChecker()
-        checker.conflicts[8080] = PortConflict(port: 8080, pid: 42, command: "node")
+        checker.conflictsByPort[8080] = PortConflict(port: 8080, pid: 42, command: "node")
         let doctor = TunnelDiagnosticRunner(sshRunner: runner, portChecker: checker)
 
         let report = await doctor.diagnose(settings)
@@ -116,7 +116,7 @@ final class TunnelDiagnosticRunnerTests: XCTestCase {
         settings.name = "Connected"
         let runner = StubSSHRunner(results: [SSHResult(exitCode: 0, stdout: sshGOutput(), stderr: "")])
         let checker = StubPortChecker()
-        checker.conflicts[1443] = PortConflict(
+        checker.conflictsByPort[1443] = PortConflict(
             port: 1443,
             pid: 49091,
             command: "ssh",
@@ -141,7 +141,7 @@ final class TunnelDiagnosticRunnerTests: XCTestCase {
         settings.name = "Connected"
         let runner = StubSSHRunner(results: [SSHResult(exitCode: 0, stdout: sshGOutput(), stderr: "")])
         let checker = StubPortChecker()
-        checker.conflicts[1443] = PortConflict(
+        checker.conflictsByPort[1443] = PortConflict(
             port: 1443,
             pid: 49091,
             command: "ssh",

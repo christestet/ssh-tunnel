@@ -29,10 +29,30 @@ wake.
 
 ## Port conflicts
 
-Before starting, the app checks whether any forwarded port is already bound. For
-foreign processes it reports the holder's **PID and command**. It may clean up
-an obvious orphan SSH process only when its arguments match this tunnel's host
-alias or control path — never an unrelated process.
+Before starting, the app checks whether every forwarded local port is free and
+handles a busy port differently depending on what holds it:
+
+- **Orphan app masters** — an obvious leftover `ssh` master from a previous run
+  of this app (matched by host alias or control path) is cleaned up so the port
+  can be reused. Unrelated processes are never touched.
+- **Config `LocalForward` ports in use** — when a port declared by
+  `LocalForward` in `~/.ssh/config` is held by a foreign process, the app shows
+  the holder's **PID and command** and offers a free local port to use instead.
+  Accept the suggestion (or type your own) to start the tunnel with that forward
+  remapped, or cancel to leave the tunnel stopped.
+- **Quick Forward ports** — a quick forward simply picks another free local port
+  automatically, with no prompt.
+
+### Session-only remap
+
+A remap applies **only to the current session** — your `~/.ssh/config` is never
+modified, and the original port is re-checked the next time you start the
+tunnel. When any config forward is remapped, the master is started with
+`ClearAllForwardings=yes` and **every** config forward is then applied
+explicitly (`ssh -O forward`), so the remapped one lands on the new port while
+the rest keep their configured ports. The chosen local port is shown in the
+tunnel's port pills, so you always click through to the right
+`http://localhost:<port>`.
 
 ## Start at Login readiness
 

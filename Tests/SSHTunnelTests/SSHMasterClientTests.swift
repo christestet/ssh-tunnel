@@ -46,6 +46,45 @@ final class SSHMasterClientTests: XCTestCase {
         ]])
     }
 
+    func testStartMasterWithClearConfigForwardsAddsClearAllForwardings() throws {
+        let runner = StubSSHRunner(results: [])
+        let client = OpenSSHMasterClient(runner: runner)
+
+        _ = try client.startMaster(host: "test-host", controlPath: "~/.ssh/test-control", clearConfigForwards: true)
+
+        XCTAssertEqual(runner.longRunningCalls, [[
+            "-N", "-M",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ServerAliveCountMax=3",
+            "-o", "ConnectTimeout=10",
+            "-o", "ClearAllForwardings=yes",
+            "-S", "~/.ssh/test-control",
+            "test-host"
+        ]])
+    }
+
+    func testAddForwardWithRemoteHostBuildsNonLocalForwardSpec() async {
+        let runner = StubSSHRunner(results: [gEmpty])
+        let client = OpenSSHMasterClient(runner: runner)
+        let target = SSHControlTarget.configured(hostAlias: "test-host")
+
+        _ = await client.addForward(
+            remotePort: 5432,
+            localPort: 8080,
+            remoteHost: "db.internal",
+            target: target,
+            controlPath: "/tmp/control.sock"
+        )
+
+        XCTAssertEqual(runner.calls, [[
+            "-S", "/tmp/control.sock",
+            "-O", "forward",
+            "-L", "8080:db.internal:5432",
+            "test-host"
+        ]])
+    }
+
     func testAddForwardBuildsControlCommandWithoutConfigForwards() async {
         let runner = StubSSHRunner(results: [gEmpty])
         let client = OpenSSHMasterClient(runner: runner)

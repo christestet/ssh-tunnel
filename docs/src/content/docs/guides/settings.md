@@ -30,6 +30,10 @@ TCP ports derived from `ssh -G <alias>`. Add optional service labels here for
 clearer localhost port pills (for example `API 1443`). To change the actual
 forwards, edit `~/.ssh/config` and choose **Refresh Forwards**.
 
+If one of these local ports is already in use when you start the tunnel, the app
+offers a session-only remap onto a free port instead of failing — see
+[Port conflicts](/ssh-tunnel/guides/health-checks/#port-conflicts).
+
 ## Quick Forwards
 
 App-managed remote ports with automatically assigned local ports. See the
