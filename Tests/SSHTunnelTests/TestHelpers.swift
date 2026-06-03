@@ -137,11 +137,22 @@ final class StubSSHRunner: SSHRunning, @unchecked Sendable {
 }
 
 final class StubPortChecker: PortAvailabilityChecking, @unchecked Sendable {
-    var conflicts: [Int: PortConflict] = [:]
+    /// Map of port → conflict, consulted by both `firstConflict` and
+    /// `conflicts(among:)` when their respective override queues are empty.
+    var conflictsByPort: [Int: PortConflict] = [:]
     var conflictResults: [PortConflict?] = []
+    /// Queue of full conflict lists, dequeued by `conflicts(among:)`.
+    var conflictsListResults: [[PortConflict]] = []
     var freePorts: [Int] = []
     var shouldFailFindFreePort = false
     private(set) var queries: [[Int]] = []
+
+    func conflicts(among ports: [Int]) async -> [PortConflict] {
+        if !conflictsListResults.isEmpty {
+            return conflictsListResults.removeFirst()
+        }
+        return ports.compactMap { conflictsByPort[$0] }
+    }
 
     func firstConflict(among ports: [Int]) async -> PortConflict? {
         queries.append(ports)
@@ -149,7 +160,7 @@ final class StubPortChecker: PortAvailabilityChecking, @unchecked Sendable {
             return conflictResults.removeFirst()
         }
         for p in ports {
-            if let c = conflicts[p] { return c }
+            if let c = conflictsByPort[p] { return c }
         }
         return nil
     }
@@ -196,8 +207,8 @@ final class StubSSHMasterClient: SSHMasterClienting, @unchecked Sendable {
     private(set) var checkCalls: [(host: String, controlPath: String, timeout: TimeInterval)] = []
     private(set) var exitCalls: [(host: String, controlPath: String)] = []
     private(set) var synchronousExitCalls: [(host: String, controlPath: String, timeout: TimeInterval)] = []
-    private(set) var startCalls: [(host: String, controlPath: String)] = []
-    private(set) var addForwardCalls: [(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String)] = []
+    private(set) var startCalls: [(host: String, controlPath: String, clearConfigForwards: Bool)] = []
+    private(set) var addForwardCalls: [(remotePort: Int, localPort: Int, remoteHost: String, target: SSHControlTarget, controlPath: String)] = []
     private(set) var removeForwardCalls: [(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String)] = []
 
     func resolveOptions(forHost host: String) async -> SSHHostOptions? {
@@ -214,8 +225,8 @@ final class StubSSHMasterClient: SSHMasterClienting, @unchecked Sendable {
         return checkResults.removeFirst()
     }
 
-    func startMaster(host: String, controlPath: String) throws -> SSHLongRunningProcess {
-        startCalls.append((host, controlPath))
+    func startMaster(host: String, controlPath: String, clearConfigForwards: Bool) throws -> SSHLongRunningProcess {
+        startCalls.append((host, controlPath, clearConfigForwards))
         if let startMasterError { throw startMasterError }
         return masterFactory()
     }
@@ -230,8 +241,8 @@ final class StubSSHMasterClient: SSHMasterClienting, @unchecked Sendable {
         return SSHResult(exitCode: 0, stdout: "", stderr: "")
     }
 
-    func addForward(remotePort: Int, localPort: Int, target: SSHControlTarget, controlPath: String) async -> SSHResult {
-        addForwardCalls.append((remotePort, localPort, target, controlPath))
+    func addForward(remotePort: Int, localPort: Int, remoteHost: String, target: SSHControlTarget, controlPath: String) async -> SSHResult {
+        addForwardCalls.append((remotePort, localPort, remoteHost, target, controlPath))
         if addForwardResults.isEmpty {
             return SSHResult(exitCode: 0, stdout: "", stderr: "")
         }
@@ -303,6 +314,39 @@ func makeTestSettings(controlPath: String = "~/.ssh/test-control") -> TunnelSett
         maxBackoff: 999,
         autostartOnLogin: false
     )
+}
+
+/// Polls `condition` on the main actor until it becomes true or `timeout`
+/// elapses. Sleeping yields the main actor, letting an in-flight
+/// `Task { await controller.startTunnel() }` advance to its suspension point
+/// (e.g. the port-conflict prompt continuation). Returns false on timeout.
+@MainActor
+@discardableResult
+func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+        if Date() > deadline { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
+/// Starts the tunnel, waits for the port-conflict prompt to appear, answers it
+/// once with `localPort` (nil = cancel), and waits for the start flow to
+/// finish. Use for single-config-forward conflict scenarios.
+@MainActor
+func startTunnelResolvingConflict(
+    _ controller: TunnelController,
+    with localPort: Int?,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    let task = Task { await controller.startTunnel() }
+    let appeared = await waitUntil { controller.pendingPortConflict != nil }
+    if appeared {
+        controller.resolvePortConflict(localPort: localPort)
+    }
+    await task.value
 }
 
 /// `ssh -G` empty success — used wherever the test doesn't care about the

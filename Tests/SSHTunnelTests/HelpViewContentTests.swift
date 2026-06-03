@@ -8,14 +8,27 @@ final class HelpViewContentTests: XCTestCase {
             .joined(separator: "\n")
 
         XCTAssertTrue(text.contains("TCP LocalForward"))
-        XCTAssertTrue(text.contains("adopts it"))
-        XCTAssertTrue(text.contains("10 consecutive"))
-        XCTAssertTrue(text.contains("Start at Login"))
-        XCTAssertTrue(text.contains("Startup Check"))
-        XCTAssertTrue(text.contains("SSH Config Forwards"))
-        XCTAssertTrue(text.contains("Run Diagnostics"))
         XCTAssertTrue(text.contains("Host Alias"))
-        XCTAssertTrue(text.contains("About & Updates"))
+        XCTAssertTrue(text.contains("SSH Config Forwards"))
+        XCTAssertTrue(text.contains("Start at Login"))
+        XCTAssertTrue(text.contains("Run Diagnostics"))
+        XCTAssertTrue(text.contains("Quick Forward"))
+        // The new config-forward port-conflict remap prompt is an essential,
+        // interactive behavior that stays in the in-app guide.
+        XCTAssertTrue(text.contains("already in use"))
+    }
+
+    func testHelpContentLinksToOnlineDocumentation() {
+        let text = HelpContent.sections
+            .map { "\($0.title)\n\($0.body)" }
+            .joined(separator: "\n")
+
+        // The quick guide keeps essentials and defers depth to the docs site.
+        XCTAssertEqual(
+            HelpContent.documentationURL.absoluteString,
+            "https://christestet.github.io/ssh-tunnel/"
+        )
+        XCTAssertTrue(text.contains(HelpContent.documentationURLString))
     }
 
     func testHelpContentDoesNotMentionRemovedLegacyFields() {

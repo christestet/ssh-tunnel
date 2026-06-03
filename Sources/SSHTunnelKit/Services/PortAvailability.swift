@@ -38,43 +38,52 @@ struct PortConflict: Equatable, Sendable {
 }
 
 protocol PortAvailabilityChecking: Sendable {
-    /// Returns the first port that's already bound on 127.0.0.1, or nil if all
-    /// listed ports are free. Order matches input order.
+    /// Returns every port among `ports` that is already bound on 127.0.0.1,
+    /// sorted by port number. Empty if all listed ports are free.
+    func conflicts(among ports: [Int]) async -> [PortConflict]
+    /// Returns the lowest-numbered port that's already bound on 127.0.0.1, or
+    /// nil if all listed ports are free.
     func firstConflict(among ports: [Int]) async -> PortConflict?
     /// Finds a free port on 127.0.0.1 within the given range.
     func findFreePort(in range: ClosedRange<Int>) async -> Int?
 }
 
-struct LocalPortAvailabilityChecker: PortAvailabilityChecking {
+extension PortAvailabilityChecking {
     func firstConflict(among ports: [Int]) async -> PortConflict? {
+        await conflicts(among: ports).min(by: { $0.port < $1.port })
+    }
+}
+
+struct LocalPortAvailabilityChecker: PortAvailabilityChecking {
+    func conflicts(among ports: [Int]) async -> [PortConflict] {
         // Probe ports in parallel — bindProbe is a syscall, identifyHolder
         // shells out. Sequential is wasteful for multi-LocalForward tunnels.
-        let results: [(Int, PortConflict)] = await withTaskGroup(
-            of: (Int, PortConflict?).self
+        let results: [PortConflict] = await withTaskGroup(
+            of: PortConflict?.self
         ) { group in
-            for (idx, port) in ports.enumerated() {
+            for port in ports {
                 group.addTask {
                     let busy = await Task.detached(priority: .userInitiated) {
                         Self.bindProbe(port: port)
                     }.value
-                    guard busy else { return (idx, nil) }
+                    guard busy else { return nil }
                     let holder = await Self.identifyHolder(port: port)
-                    return (idx, PortConflict(
+                    return PortConflict(
                         port: port,
                         pid: holder.pid,
                         command: holder.command,
                         commandArgs: holder.args,
                         openFiles: holder.openFiles
-                    ))
+                    )
                 }
             }
-            var out: [(Int, PortConflict)] = []
-            for await pair in group {
-                if let c = pair.1 { out.append((pair.0, c)) }
+            var out: [PortConflict] = []
+            for await conflict in group {
+                if let conflict { out.append(conflict) }
             }
             return out
         }
-        return results.min(by: { $0.0 < $1.0 })?.1
+        return results.sorted { $0.port < $1.port }
     }
 
     func findFreePort(in range: ClosedRange<Int>) async -> Int? {

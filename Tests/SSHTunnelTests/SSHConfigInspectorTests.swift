@@ -15,9 +15,20 @@ final class SSHConfigInspectorTests: XCTestCase {
         """
         let infos = SSHConfigInspector.parseLocalForwardPorts(from: output)
         XCTAssertEqual(infos, [
-            ForwardInfo(localPort: 1443, remotePort: 443),
-            ForwardInfo(localPort: 8080, remotePort: 5432),
-            ForwardInfo(localPort: 9090, remotePort: 80)
+            ForwardInfo(localPort: 1443, remotePort: 443, remoteHost: "host"),
+            ForwardInfo(localPort: 8080, remotePort: 5432, remoteHost: "db"),
+            ForwardInfo(localPort: 9090, remotePort: 80, remoteHost: "srv")
+        ])
+    }
+
+    func testParsesRemoteHostForNonLocalEndpoints() {
+        let output = """
+        localforward 8080 db.internal:5432
+        LocalForward 9000 [2001:db8::1]:443
+        """
+        XCTAssertEqual(SSHConfigInspector.parseLocalForwardPorts(from: output), [
+            ForwardInfo(localPort: 8080, remotePort: 5432, remoteHost: "db.internal"),
+            ForwardInfo(localPort: 9000, remotePort: 443, remoteHost: "2001:db8::1")
         ])
     }
 
@@ -32,10 +43,10 @@ final class SSHConfigInspectorTests: XCTestCase {
         """
 
         XCTAssertEqual(SSHConfigInspector.parseLocalForwardPorts(from: output), [
-            ForwardInfo(localPort: 1443, remotePort: 443),
-            ForwardInfo(localPort: 8080, remotePort: 5432),
-            ForwardInfo(localPort: 9090, remotePort: 9090),
-            ForwardInfo(localPort: 7000, remotePort: 7000)
+            ForwardInfo(localPort: 1443, remotePort: 443, remoteHost: "host"),
+            ForwardInfo(localPort: 8080, remotePort: 5432, remoteHost: "db"),
+            ForwardInfo(localPort: 9090, remotePort: 9090, remoteHost: "metrics"),
+            ForwardInfo(localPort: 7000, remotePort: 7000, remoteHost: "api")
         ])
     }
 
@@ -46,7 +57,7 @@ final class SSHConfigInspectorTests: XCTestCase {
         XCTAssertEqual(SSHConfigInspector.parseLocalForwardPorts(from: "localforward abc xyz"), [])
         XCTAssertEqual(
             SSHConfigInspector.parseLocalForwardPorts(from: "  LocalForward   42   remote:1\n"),
-            [ForwardInfo(localPort: 42, remotePort: 1)],
+            [ForwardInfo(localPort: 42, remotePort: 1, remoteHost: "remote")],
             "Leading/extra whitespace should not break parsing"
         )
     }
@@ -64,8 +75,8 @@ final class SSHConfigInspectorTests: XCTestCase {
         XCTAssertEqual(opts.user, "sshproxy")
         XCTAssertEqual(opts.port, "2222")
         XCTAssertEqual(opts.forwardInfos, [
-            ForwardInfo(localPort: 1443, remotePort: 443),
-            ForwardInfo(localPort: 9090, remotePort: 9090)
+            ForwardInfo(localPort: 1443, remotePort: 443, remoteHost: "backend"),
+            ForwardInfo(localPort: 9090, remotePort: 9090, remoteHost: "metrics")
         ])
     }
 

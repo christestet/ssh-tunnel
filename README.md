@@ -35,8 +35,9 @@ on every push to `main`. See [docs/README.md](docs/README.md) to run it locally.
   windows open.
 - Supports multiple tunnels, per-tunnel Start at Login, quick forwards, labels,
   and clickable localhost port pills.
-- Detects local port conflicts before starting and reports the blocking
-  process.
+- Detects local port conflicts before starting, reports the blocking process,
+  and offers a session-only remap of a busy config `LocalForward` port onto a
+  free local port.
 - Uses a namespaced default control path,
   `~/.ssh/control-sshtunnelapp-%C`, to avoid colliding with interactive SSH
   sessions.
@@ -140,6 +141,12 @@ Use **Quick Forwards** for temporary or app-managed forwards. Enter a remote
 port and optional label; the app assigns a free local port, saves it, and
 applies it immediately when the tunnel is connected.
 
+If a config `LocalForward` port is already in use when you start a tunnel, the
+app shows the blocking process and offers a free local port to use for that
+session — accept to connect with the forward remapped (the new port appears in
+the port pills) or cancel. The remap is not written back to `~/.ssh/config` and
+the original port is re-checked on the next start.
+
 ## Features
 
 - Manage multiple tunnels from the menu bar and Settings sidebar.
@@ -174,8 +181,9 @@ applies it immediately when the tunnel is connected.
 - Own the master `ssh` process and stop app-started masters on normal quit.
 - Adopt a live master at the app control path after relaunch.
 - Clean stale control sockets before each start.
-- Detect local port conflicts before starting and name the holder PID and
-  command.
+- Detect local port conflicts before starting, name the holder, and offer a
+  session-only remap of a busy config `LocalForward` port onto a free local
+  port (your `~/.ssh/config` is never modified).
 - Reconnect on network changes through `NWPathMonitor` and on system wake.
 - Delay Start at Login until the network is ready, with an optional startup
   TCP check for VPN-only endpoints.
@@ -266,11 +274,16 @@ timeouts so a stuck SSH process cannot freeze the UI.
 | --- | --- |
 | Master | `ssh -N -M -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -S <controlPath> <hostAlias>` |
 | Resolve ports | `ssh -G <hostAlias>` |
-| Quick Forward | `ssh -S <controlPath> -O forward -L <localPort>:localhost:<remotePort> <hostAlias>` |
-| Remove Quick Forward | `ssh -S <controlPath> -O cancel -L <localPort>:localhost:<remotePort> <hostAlias>` |
+| Add forward | `ssh -S <controlPath> -O forward -L <localPort>:<remoteHost>:<remotePort> <hostAlias>` |
+| Remove forward | `ssh -S <controlPath> -O cancel -L <localPort>:<remoteHost>:<remotePort> <hostAlias>` |
 | Check | `ssh -S <controlPath> -O check <hostAlias>` |
 | Stop | `ssh -S <controlPath> -O exit <hostAlias>` |
 | Forward probe | TCP `connect()` to `127.0.0.1:<port>` for each forwarded port |
+
+`<remoteHost>` is `localhost` for Quick Forwards; for a config `LocalForward` it
+is the host that line targets. When you accept a session-only remap for a busy
+config port, the master is started with `-o ClearAllForwardings=yes` and every
+config forward is then applied explicitly with `ssh -O forward`.
 
 The master runs as a regular child process, so the app process is its parent.
 During a normal quit, SSH Tunnel sends `ssh -O exit` to stop masters it owns and

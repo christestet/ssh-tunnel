@@ -63,9 +63,10 @@ struct SSHConfigInspector {
             
             guard let localPort = parseTCPPort(localBindSpec) else { continue }
             let remotePort = parseTCPPort(remoteSpec)
-            
+            let remoteHost = parseRemoteHost(remoteSpec)
+
             if seenPorts.insert(localPort).inserted {
-                infos.append(ForwardInfo(localPort: localPort, remotePort: remotePort))
+                infos.append(ForwardInfo(localPort: localPort, remotePort: remotePort, remoteHost: remoteHost))
             }
         }
         return infos
@@ -101,6 +102,25 @@ struct SSHConfigInspector {
             forwardInfos: parseLocalForwardPorts(from: output),
             userControlPath: userControlPath
         )
+    }
+
+    /// Extracts the remote host from a `LocalForward` remote spec
+    /// (`host:hostport`). Handles bracketed IPv6 (`[::1]:80` → `::1`) and bare
+    /// `host:port` (everything before the last colon). Falls back to
+    /// `localhost` when no host part is present.
+    private static func parseRemoteHost(_ rawSpec: String) -> String {
+        // `maxSplits` parsing can leave leading whitespace on the remote spec.
+        let remoteSpec = rawSpec.trimmingCharacters(in: .whitespaces)
+        if remoteSpec.hasPrefix("["),
+           let close = remoteSpec.firstIndex(of: "]") {
+            let host = remoteSpec[remoteSpec.index(after: remoteSpec.startIndex)..<close]
+            return host.isEmpty ? "localhost" : String(host)
+        }
+        if let lastColon = remoteSpec.lastIndex(of: ":") {
+            let host = remoteSpec[remoteSpec.startIndex..<lastColon]
+            return host.isEmpty ? "localhost" : String(host)
+        }
+        return "localhost"
     }
 
     private static func parseTCPPort(_ bindSpec: String) -> Int? {

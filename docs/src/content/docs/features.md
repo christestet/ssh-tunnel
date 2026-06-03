@@ -36,8 +36,9 @@ See [Using the App](/ssh-tunnel/guides/using-the-app/).
   unless the tunnel was stopped manually.
 - Stop retrying after 10 consecutive failed attempts and surface the last error.
 - Reconnect on network changes through `NWPathMonitor` and on system wake.
-- Detect local port conflicts before starting and name the holder PID and
-  command.
+- Detect local port conflicts before starting, name the holder, and offer a
+  session-only remap of a busy config `LocalForward` port onto a free local
+  port.
 
 See [Health Checks & Reconnects](/ssh-tunnel/guides/health-checks/).
 

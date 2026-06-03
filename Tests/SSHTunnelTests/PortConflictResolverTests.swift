@@ -15,7 +15,7 @@ final class PortConflictResolverTests: XCTestCase {
     func testResolveClassifiesForeignHolder() async {
         let checker = StubPortChecker()
         let conflict = PortConflict(port: 6333, pid: 42, command: "qdrant")
-        checker.conflicts[6333] = conflict
+        checker.conflictsByPort[6333] = conflict
         let resolver = makeResolver(checker: checker)
 
         let result = await resolver.resolve(among: [6333])
@@ -26,7 +26,7 @@ final class PortConflictResolverTests: XCTestCase {
     func testResolveClassifiesUnidentifiedSshHolderAsTransient() async {
         let checker = StubPortChecker()
         let conflict = PortConflict(port: 6333, pid: 42, command: "ssh")
-        checker.conflicts[6333] = conflict
+        checker.conflictsByPort[6333] = conflict
         let resolver = makeResolver(checker: checker)
 
         let result = await resolver.resolve(among: [6333])
@@ -43,7 +43,7 @@ final class PortConflictResolverTests: XCTestCase {
             commandArgs: ["/usr/bin/ssh", "-N", "different-host"],
             openFiles: ["/tmp/different-control.sock"]
         )
-        checker.conflicts[6333] = conflict
+        checker.conflictsByPort[6333] = conflict
         let resolver = makeResolver(checker: checker)
 
         let result = await resolver.resolve(among: [6333])

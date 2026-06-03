@@ -583,6 +583,22 @@ private struct TunnelRow: View {
                 openSettingsWindow()
             }
         }
+        .sheet(item: portConflictBinding) { prompt in
+            PortConflictPromptView(prompt: prompt) { chosen in
+                controller.resolvePortConflict(localPort: chosen)
+            }
+        }
+    }
+
+    /// Bridges the controller's `pendingPortConflict` to `.sheet(item:)`. A
+    /// system dismissal (set to nil) is treated as a cancel.
+    private var portConflictBinding: Binding<PortConflictPrompt?> {
+        Binding(
+            get: { controller.pendingPortConflict },
+            set: { newValue in
+                if newValue == nil { controller.resolvePortConflict(localPort: nil) }
+            }
+        )
     }
 
     private var activeBinding: Binding<Bool> {
@@ -716,6 +732,79 @@ private struct QuickForwardPopover: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+    }
+}
+
+/// Prompt shown when a config `LocalForward`'s configured local port is already
+/// bound. Surfaces the holding process, lets the user pick a free local port to
+/// remap onto (prefilled with a suggestion), or cancel the start.
+private struct PortConflictPromptView: View {
+    let prompt: PortConflictPrompt
+    let onResolve: (Int?) -> Void
+
+    @State private var port: Int
+
+    init(prompt: PortConflictPrompt, onResolve: @escaping (Int?) -> Void) {
+        self.prompt = prompt
+        self.onResolve = onResolve
+        _port = State(initialValue: prompt.suggestedPort)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Local port \(SettingsNumberDisplay.port(prompt.forward.localPort)) is in use", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Held by \(holderText).")
+                Text("This port is set by `LocalForward` in your ~/.ssh/config and forwards to \(prompt.forward.remoteHost):\(remotePortText). Pick a free local port to use for this session, or cancel.")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                Text("Use local port")
+                    .foregroundStyle(.secondary)
+                TextField("Port", value: $port, formatter: SettingsNumberDisplay.portInputFormatter)
+                    .textFieldStyle(.roundedBorder)
+                    .monospacedDigit()
+                    .frame(width: 80)
+                Stepper("", value: $port, in: 1...65535, step: 1)
+                    .labelsHidden()
+            }
+            .controlSize(.small)
+
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    onResolve(nil)
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Use This Port") {
+                    onResolve(port)
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private var holderText: String {
+        switch (prompt.conflict.pid, prompt.conflict.command) {
+        case let (p?, c?): return "\(c) (PID \(p))"
+        case let (p?, nil): return "PID \(p)"
+        case let (nil, c?): return c
+        case (nil, nil): return "another process"
+        }
+    }
+
+    private var remotePortText: String {
+        guard let remotePort = prompt.forward.remotePort else { return "the remote host" }
+        return SettingsNumberDisplay.port(remotePort)
     }
 }
 
