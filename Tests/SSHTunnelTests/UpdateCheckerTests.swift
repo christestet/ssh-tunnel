@@ -329,6 +329,30 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertTrue(notifier.notifications.isEmpty)
     }
 
+    func testNotificationReleaseURLReadsValidUserInfoString() {
+        let url = UserNotificationUpdateNotifier.releaseURL(from: [
+            UserNotificationUpdateNotifier.releaseURLKey: "https://github.com/christestet/ssh-tunnel/releases/tag/v2.3.0"
+        ])
+
+        XCTAssertEqual(
+            url?.absoluteString,
+            "https://github.com/christestet/ssh-tunnel/releases/tag/v2.3.0"
+        )
+    }
+
+    func testNotificationReleaseURLIgnoresInvalidUserInfo() {
+        XCTAssertNil(UserNotificationUpdateNotifier.releaseURL(from: [:]))
+        XCTAssertNil(UserNotificationUpdateNotifier.releaseURL(from: [
+            UserNotificationUpdateNotifier.releaseURLKey: 42
+        ]))
+        XCTAssertNil(UserNotificationUpdateNotifier.releaseURL(from: [
+            UserNotificationUpdateNotifier.releaseURLKey: ""
+        ]))
+        XCTAssertNil(UserNotificationUpdateNotifier.releaseURL(from: [
+            UserNotificationUpdateNotifier.releaseURLKey: "release-notes"
+        ]))
+    }
+
     // MARK: - Loop scheduling
 
     @MainActor

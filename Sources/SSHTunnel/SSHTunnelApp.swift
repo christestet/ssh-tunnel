@@ -22,9 +22,10 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        guard let urlString = userInfo[UserNotificationUpdateNotifier.releaseURLKey] as? String,
-              let url = URL(string: urlString) else { return }
-        await MainActor.run { NSWorkspace.shared.open(url) }
+        guard let url = UserNotificationUpdateNotifier.releaseURL(from: userInfo) else { return }
+        await MainActor.run {
+            _ = NSWorkspace.shared.open(url)
+        }
     }
 }
 

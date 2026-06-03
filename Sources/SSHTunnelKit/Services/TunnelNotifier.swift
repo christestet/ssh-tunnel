@@ -85,6 +85,13 @@ public struct UserNotificationUpdateNotifier: UpdateNotifying {
 
     public init() {}
 
+    public static func releaseURL(from userInfo: [AnyHashable: Any]) -> URL? {
+        guard let urlString = userInfo[releaseURLKey] as? String,
+              let url = URL(string: urlString),
+              url.scheme != nil else { return nil }
+        return url
+    }
+
     public func sendUpdateAvailableNotification(version: String, releaseURL: URL) {
         guard isRunningFromApplicationBundle else { return }
         let urlString = releaseURL.absoluteString
