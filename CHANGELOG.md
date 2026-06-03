@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/christestet/ssh-tunnel/compare/v2.4.0...v2.5.0) (2026-06-03)
+
+
+### Features
+
+* add app icons and GitHub Pages docs ([9353633](https://github.com/christestet/ssh-tunnel/commit/93536332fe81d6333363a48c169e287fd17cb03d))
+
+
+### Bug Fixes
+
+* npm hardening security ([5bf7371](https://github.com/christestet/ssh-tunnel/commit/5bf73710f52505a62eaadb7ea65b77e0a1bb33b4))
+
 ## [2.4.0](https://github.com/christestet/ssh-tunnel/compare/v2.3.1...v2.4.0) (2026-06-03)
 
 
