@@ -14,8 +14,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow one concurrent deployment; in-progress runs are not cancelled so a
 # deploy always finishes.
@@ -26,6 +24,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: docs
@@ -36,6 +36,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: docs/package-lock.json
+      - run: npm run check:lockfile
       - run: npm ci
       - run: npm run build
       - uses: actions/configure-pages@v5
@@ -46,6 +47,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

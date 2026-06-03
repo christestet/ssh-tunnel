@@ -7,6 +7,7 @@
     "presync": "node scripts/sync-content.mjs",
     "predev": "npm run presync",
     "prebuild": "npm run presync",
+    "check:lockfile": "node scripts/check-lockfile.mjs",
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",

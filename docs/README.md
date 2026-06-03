@@ -7,7 +7,7 @@ with [Astro Starlight](https://starlight.astro.build/).
 
 ```bash
 cd docs
-npm install
+npm ci
 npm run dev      # http://localhost:4321/ssh-tunnel/
 ```
 
@@ -39,3 +39,8 @@ by creating a Markdown file there and registering it in the `sidebar` in
   `base: "/ssh-tunnel"`. Internal links in Markdown use that prefix
   (`/ssh-tunnel/...`). If you move to a custom domain, set `site` to it and
   change `base` to `"/"`.
+- `.npmrc` pins installs to the public npm registry. Use `npm ci` for normal
+  installs so `package-lock.json` remains the source of truth.
+- Run npm installs from a shell without publishing or cloud credentials in the
+  environment. Avoid `NPM_TOKEN`, write-scoped `GITHUB_TOKEN`, AWS, GCP, and
+  Azure credentials during dependency installation.
