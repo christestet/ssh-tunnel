@@ -384,6 +384,26 @@ final class UpdateCheckerTests: XCTestCase {
         )
     }
 
+    func testRepositoryURLPinsTheGitHubRepository() {
+        let url = GitHubReleaseFetcher.repositoryURL(
+            owner: GitHubReleaseFetcher.defaultOwner,
+            repo: GitHubReleaseFetcher.defaultRepo
+        )
+        XCTAssertEqual(url?.absoluteString, "https://github.com/christestet/ssh-tunnel")
+    }
+
+    func testReleasePageURLPinsTagReleasePage() {
+        let tagName = AppVersionDisplay.badge(for: "1.2.3")!
+        let url = GitHubReleaseFetcher.releasePageURL(
+            owner: GitHubReleaseFetcher.defaultOwner,
+            repo: GitHubReleaseFetcher.defaultRepo,
+            tagName: tagName
+        )
+        XCTAssertEqual(url?.scheme, "https")
+        XCTAssertEqual(url?.host, "github.com")
+        XCTAssertEqual(url?.path, "/christestet/ssh-tunnel/releases/tag/\(tagName)")
+    }
+
     func testDecodesRealGitHubPayload() throws {
         let json = """
         {

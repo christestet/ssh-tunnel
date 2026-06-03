@@ -90,6 +90,44 @@ final class TunnelManagerLoginItemTests: XCTestCase {
     }
 
     @MainActor
+    func testConnectedCountCountsOnlyConnectedControllers() {
+        let connected = TunnelController(
+            settings: makeTestSettings(),
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            startsMonitoring: false
+        )
+        var secondConnectedSettings = makeTestSettings()
+        secondConnectedSettings.id = UUID()
+        let secondConnected = TunnelController(
+            settings: secondConnectedSettings,
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            startsMonitoring: false
+        )
+        var connectingSettings = makeTestSettings()
+        connectingSettings.id = UUID()
+        let connecting = TunnelController(
+            settings: connectingSettings,
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            startsMonitoring: false
+        )
+        connected.state = .connected
+        secondConnected.state = .connected
+        connecting.state = .connecting
+        let manager = TunnelManager(
+            settingsStore: TunnelSettingsStore(tunnels: []),
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            loginItemManager: SpyLoginItemManager(),
+            controllers: [connected, secondConnected, connecting]
+        )
+
+        XCTAssertEqual(manager.connectedCount, 2)
+    }
+
+    @MainActor
     func testEnablingAnyAutostartTunnelRegistersLoginItem() throws {
         let settings = makeTestSettings()
         let loginItems = SpyLoginItemManager()

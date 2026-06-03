@@ -52,9 +52,18 @@ struct UpdatesSettingsView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Updates").font(.headline)
                 if let badge = AppVersionDisplay.badge(for: updateChecker.currentVersion) {
-                    Text("Current version \(badge)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let releaseURL = AppVersionDisplay.releaseURL(for: updateChecker.currentVersion) {
+                        Link("Current version \(badge)", destination: releaseURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .pointerStyle(.link)
+                            .help("Open \(badge) on GitHub Releases")
+                            .accessibilityLabel("Open current version \(badge) on GitHub Releases")
+                    } else {
+                        Text("Current version \(badge)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }

@@ -20,4 +20,15 @@ enum AppVersionDisplay {
         if trimmed.lowercased().hasPrefix("v") { return trimmed }
         return "v\(trimmed)"
     }
+
+    static func releaseURL(
+        for shortVersion: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    ) -> URL? {
+        guard let tagName = badge(for: shortVersion) else { return nil }
+        return GitHubReleaseFetcher.releasePageURL(
+            owner: GitHubReleaseFetcher.defaultOwner,
+            repo: GitHubReleaseFetcher.defaultRepo,
+            tagName: tagName
+        )
+    }
 }

@@ -69,12 +69,24 @@ public struct MenuBarView: View {
             Text("SSH Tunnel")
                 .font(.headline)
             if let versionBadge = AppVersionDisplay.badge() {
-                Text(versionBadge)
-                    .font(.caption.weight(.medium))
+                if let releaseURL = AppVersionDisplay.releaseURL() {
+                    Link(destination: releaseURL) {
+                        Text(versionBadge)
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .pointerStyle(.link)
+                    .help("Open \(versionBadge) on GitHub Releases")
+                    .accessibilityLabel("Open \(versionBadge) on GitHub Releases")
+                } else {
+                    Text(versionBadge)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            OverallStateBadge(state: manager.overallState)
+            OverallStateBadge(state: manager.overallState, connectedCount: manager.connectedCount)
         }
         .accessibilityLabel(AppVersionDisplay.title())
         .padding(.horizontal, 16)
@@ -189,6 +201,12 @@ public struct MenuBarView: View {
                         NSApp.activate()
                     }
                     .keyboardShortcut("?", modifiers: [.command, .shift])
+                    Button(
+                        MenuBarMoreMenuPresentation.repository.title,
+                        systemImage: MenuBarMoreMenuPresentation.repository.systemImage
+                    ) {
+                        NSWorkspace.shared.open(MenuBarMoreMenuPresentation.repository.url)
+                    }
 
                     Divider()
 
@@ -231,6 +249,23 @@ public struct MenuBarView: View {
         // history that survives app relaunches.
         NSWorkspace.shared.activateFileViewerSelecting([TunnelLog.fileURL])
     }
+}
+
+struct MenuBarMoreMenuPresentation {
+    struct LinkItem: Equatable {
+        let title: String
+        let systemImage: String
+        let url: URL
+    }
+
+    static let repository = LinkItem(
+        title: "GitHub Repository",
+        systemImage: "link",
+        url: GitHubReleaseFetcher.repositoryURL(
+            owner: GitHubReleaseFetcher.defaultOwner,
+            repo: GitHubReleaseFetcher.defaultRepo
+        )!
+    )
 }
 
 private struct PortPillItem: Identifiable {
@@ -387,19 +422,40 @@ private struct PortPill: View {
 
 private struct OverallStateBadge: View {
     let state: TunnelState
+    let connectedCount: Int
+
+    private var presentation: OverallStateBadgePresentation {
+        OverallStateBadgePresentation(state: state, connectedCount: connectedCount)
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Circle()
                 .fill(state.listColor)
                 .frame(width: 7, height: 7)
-            Text(state.label)
+            Text(presentation.label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityLabel(presentation.accessibilityLabel)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(.quaternary, in: .capsule)
+    }
+}
+
+struct OverallStateBadgePresentation: Equatable {
+    let state: TunnelState
+    let connectedCount: Int
+
+    var label: String {
+        guard state == .connected, connectedCount > 0 else { return state.label }
+        return "\(connectedCount) \(state.label)"
+    }
+
+    var accessibilityLabel: String {
+        guard state == .connected, connectedCount > 0 else { return state.label }
+        return "\(connectedCount) \(connectedCount == 1 ? "tunnel" : "tunnels") connected"
     }
 }
 

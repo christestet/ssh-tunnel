@@ -113,6 +113,10 @@ public final class TunnelManager {
         return .disconnected
     }
 
+    public var connectedCount: Int {
+        controllers.filter { $0.state == .connected }.count
+    }
+
     func controller(for id: UUID) -> TunnelController? {
         controllers.first { $0.id == id }
     }

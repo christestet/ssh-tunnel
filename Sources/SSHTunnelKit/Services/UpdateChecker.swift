@@ -81,6 +81,22 @@ public struct GitHubReleaseFetcher: ReleaseFetching {
         return components.url
     }
 
+    public static func repositoryURL(owner: String, repo: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "github.com"
+        components.path = "/\(owner)/\(repo)"
+        return components.url
+    }
+
+    public static func releasePageURL(owner: String, repo: String, tagName: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "github.com"
+        components.path = "/\(owner)/\(repo)/releases/tag/\(tagName)"
+        return components.url
+    }
+
     public func fetchLatestRelease() async throws -> GitHubRelease {
         guard let url = Self.latestReleaseURL(owner: owner, repo: repo) else {
             throw UpdateCheckError.invalidResponse

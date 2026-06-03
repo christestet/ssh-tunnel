@@ -23,4 +23,34 @@ final class AppVersionDisplayTests: XCTestCase {
             "SSH Tunnel"
         )
     }
+
+    func testReleaseURLUsesNormalizedVersionTag() {
+        let badge = AppVersionDisplay.badge(for: "1.2.3")
+
+        XCTAssertEqual(
+            AppVersionDisplay.releaseURL(for: "1.2.3"),
+            GitHubReleaseFetcher.releasePageURL(
+                owner: GitHubReleaseFetcher.defaultOwner,
+                repo: GitHubReleaseFetcher.defaultRepo,
+                tagName: badge!
+            )
+        )
+    }
+
+    func testReleaseURLPreservesExistingVPrefix() {
+        let badge = AppVersionDisplay.badge(for: "v1.2.3")
+
+        XCTAssertEqual(
+            AppVersionDisplay.releaseURL(for: "v1.2.3"),
+            GitHubReleaseFetcher.releasePageURL(
+                owner: GitHubReleaseFetcher.defaultOwner,
+                repo: GitHubReleaseFetcher.defaultRepo,
+                tagName: badge!
+            )
+        )
+    }
+
+    func testReleaseURLIsNilWhenVersionIsMissing() {
+        XCTAssertNil(AppVersionDisplay.releaseURL(for: "   "))
+    }
 }
