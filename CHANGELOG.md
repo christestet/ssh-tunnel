@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.1](https://github.com/christestet/ssh-tunnel/compare/v2.3.0...v2.3.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* color manubar icon ([1da1f70](https://github.com/christestet/ssh-tunnel/commit/1da1f70fdbde1f2759e3471117f9215e54dfb5ec))
+* **fixed-unused-compiler-warnings:** tunnelapp and tunnel notifier throw unsued warning durinhbg compie ([fd7271e](https://github.com/christestet/ssh-tunnel/commit/fd7271ee09babfa5c34fcf9fa0b432ee637845b0))
+
 ## [2.3.0](https://github.com/christestet/ssh-tunnel/compare/v2.2.4...v2.3.0) (2026-06-02)
 
 
