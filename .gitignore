@@ -11,3 +11,10 @@ xcuserdata/
 DerivedData/
 
 dist/
+
+# Docs site (Astro Starlight)
+docs/node_modules/
+docs/dist/
+docs/.astro/
+# Generated from /CHANGELOG.md by docs/scripts/sync-content.mjs
+docs/src/content/docs/changelog.md

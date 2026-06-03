@@ -1,0 +1,21 @@
+{
+  "name": "ssh-tunnel-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "presync": "node scripts/sync-content.mjs",
+    "predev": "npm run presync",
+    "prebuild": "npm run presync",
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.39.3",
+    "astro": "^6.4.3",
+    "sharp": "^0.34.5"
+  }
+}

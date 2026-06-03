@@ -6,9 +6,10 @@
 [![Release](https://github.com/christestet/ssh-tunnel/actions/workflows/release.yml/badge.svg)](https://github.com/christestet/ssh-tunnel/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/christestet/ssh-tunnel?display_name=tag&sort=semver)](https://github.com/christestet/ssh-tunnel/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2563eb.svg?logo=readthedocs&logoColor=white)](https://christestet.github.io/ssh-tunnel/)
 
 <p align="center">
-  <img src="assets/icon.png" alt="SSH Tunnel menu bar app icon" width="180">
+  <img src="assets/ssh-tunnel.png" alt="SSH Tunnel menu bar app icon" width="180">
 </p>
 
 **SSH Tunnel** is a native macOS menu bar app for opening, monitoring, and
@@ -16,6 +17,14 @@ closing SSH tunnels from the SSH config you already use. It wraps the same
 `ssh -M` master-socket workflow you would run in Terminal, then adds health
 checks, reconnects, quick forwards, diagnostics, and process lifecycle handling
 so tunnels do not drift out of sync.
+
+## Documentation
+
+Full documentation lives at **<https://christestet.github.io/ssh-tunnel/>** —
+install guide, SSH configuration, usage, health checks, command mapping,
+debugging, and FAQ. The site is built from the `docs/` folder with
+[Astro Starlight](https://starlight.astro.build/) and deployed to GitHub Pages
+on every push to `main`. See [docs/README.md](docs/README.md) to run it locally.
 
 ## Highlights
 

@@ -1,0 +1,82 @@
+---
+title: SSH Tunnel
+description: Native macOS menu bar app for opening, monitoring, and closing SSH tunnels from your existing SSH config.
+template: splash
+hero:
+  tagline: Open, monitor, and reconnect SSH tunnels from the macOS menu bar — driven by the SSH config you already use.
+  image:
+    file: ../../assets/ssh-tunnel.png
+    alt: SSH Tunnel app icon
+  actions:
+    - text: Get Started
+      link: getting-started/install/
+      icon: right-arrow
+      variant: primary
+    - text: Download (GitHub Releases)
+      link: https://github.com/christestet/ssh-tunnel/releases
+      icon: external
+      variant: secondary
+    - text: View on GitHub
+      link: https://github.com/christestet/ssh-tunnel
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+## Why SSH Tunnel
+
+SSH Tunnel wraps the same `ssh -M` master-socket workflow you would run in
+Terminal, then adds health checks, automatic reconnects, quick forwards,
+diagnostics, and proper process lifecycle handling — so your tunnels stay in
+sync without keeping Terminal windows open.
+
+<CardGrid stagger>
+  <Card title="Uses your SSH config" icon="setting">
+    Reads tunnel hosts and `LocalForward` entries straight from `~/.ssh/config`
+    via `ssh -G`. No separate config to maintain.
+  </Card>
+  <Card title="Self-healing tunnels" icon="random">
+    Scheduled health checks plus TCP port probes, automatic reconnects with
+    exponential backoff, and recovery on network changes and system wake.
+  </Card>
+  <Card title="Quick Forwards" icon="add-document">
+    Forward a remote port on the fly. The app picks a free local port, saves
+    it, and reapplies it after reconnects and restarts.
+  </Card>
+  <Card title="Native & lightweight" icon="apple">
+    A SwiftUI menu bar app with no Dock icon. State at a glance through the
+    menu bar icon color: idle, connecting, connected, or failed.
+  </Card>
+</CardGrid>
+
+## Start here
+
+<CardGrid>
+  <LinkCard
+    title="Install"
+    description="Download the DMG and open it on macOS 26 (Tahoe)."
+    href="getting-started/install/"
+  />
+  <LinkCard
+    title="Configure SSH"
+    description="Define a host with LocalForward entries and add a tunnel."
+    href="getting-started/configure-ssh/"
+  />
+  <LinkCard
+    title="Using the App"
+    description="Menu rows, port pills, and the action bar explained."
+    href="guides/using-the-app/"
+  />
+  <LinkCard
+    title="FAQ & Troubleshooting"
+    description="Keyboard shortcuts and fixes for common connection issues."
+    href="faq/"
+  />
+</CardGrid>
+
+:::note[Requirements]
+macOS 26.0 or newer (tested on macOS 26.5 Tahoe) and a working host alias in
+`~/.ssh/config`. Release builds are ad-hoc signed and **not notarized** — see
+[Install](getting-started/install/) for the one-time Gatekeeper step.
+:::
