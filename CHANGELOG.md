@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/christestet/ssh-tunnel/compare/v2.3.1...v2.4.0) (2026-06-03)
+
+
+### Features
+
+* **add-repo-links-and-update-connection-to-show-tunnel-count-update-readme:** we added connection update, added repo links and we updated the repo ([1f3009d](https://github.com/christestet/ssh-tunnel/commit/1f3009dca7c1b35723771b224b33769759ca3b68))
+
 ## [2.3.1](https://github.com/christestet/ssh-tunnel/compare/v2.3.0...v2.3.1) (2026-06-03)
 
 
