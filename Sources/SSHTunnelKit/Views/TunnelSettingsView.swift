@@ -155,16 +155,19 @@ public struct TunnelListSettingsView: View {
     }
 
     private var updatesButton: some View {
-        let hasUpdate = updateChecker.availableUpdate != nil
+        let presentation = SettingsUpdatesButtonPresentation(hasUpdate: updateChecker.availableUpdate != nil)
         return Button {
             showingUpdates = true
         } label: {
-            Image(systemName: hasUpdate ? "arrow.down.circle.fill" : "info.circle")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(hasUpdate ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            Image(systemName: presentation.symbolName)
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(presentation.usesAccentTint ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                .frame(width: 24, height: 24)
+                .contentShape(.circle)
         }
-        .accessibilityLabel("About & Updates")
-        .help("About & Updates")
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .help(presentation.help)
         .popover(isPresented: $showingUpdates, arrowEdge: .bottom) {
             UpdatesSettingsView(updateChecker: updateChecker)
         }

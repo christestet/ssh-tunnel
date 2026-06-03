@@ -105,11 +105,7 @@ struct SSHTunnelApp: App {
         MenuBarExtra {
             MenuBarView(manager: manager, updateChecker: updateChecker)
         } label: {
-            // Template image + SwiftUI tint: the glyph adapts to light/dark and
-            // the Tahoe menu-bar appearance automatically, and state is conveyed
-            // by `foregroundStyle` rather than a baked-in bitmap fill.
-            Image(nsImage: Self.baseIcon)
-                .foregroundStyle(Self.menuBarTint(for: manager.overallState))
+            Image(nsImage: MenuBarIconImage.image(baseIcon: Self.baseIcon, state: manager.overallState))
         }
         .menuBarExtraStyle(.window)
 
@@ -138,22 +134,13 @@ struct SSHTunnelApp: App {
         .windowResizability(.contentSize)
     }
 
-    /// The menu bar glyph as a *template* image so macOS renders it correctly
-    /// for the current appearance (light/dark, increased contrast, and the
-    /// Tahoe transparent menu bar). Colour comes from SwiftUI's
-    /// `foregroundStyle`, never a baked-in fill.
+    /// Source glyph for status-colored menu bar images. The rendered menu bar
+    /// images are concrete bitmaps because `MenuBarExtra` label tinting can be
+    /// dropped by AppKit on recent macOS releases.
     private static let baseIcon: NSImage = {
         let img = NSImage(named: "MenuBarIcon") ?? NSImage()
-        img.size = NSSize(width: 18, height: 18)
+        img.size = MenuBarIconImage.defaultSize
         img.isTemplate = true
         return img
     }()
-
-    private static func menuBarTint(for state: TunnelState) -> Color {
-        if let nsColor = state.menuBarTintColor {
-            return Color(nsColor: nsColor)
-        }
-        // Idle: defer to the system so the glyph tracks the menu-bar appearance.
-        return .primary
-    }
 }

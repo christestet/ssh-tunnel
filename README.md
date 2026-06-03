@@ -129,7 +129,7 @@ applies it immediately when the tunnel is connected.
 - Launch as a single-instance app. Opening a second copy activates the existing
   app and exits the new process.
 - Show tunnel state through menu bar icon color:
-  - **Idle**: default menu bar tint.
+  - **Idle**: gray.
   - **Connecting / reconnecting**: yellow.
   - **Connected**: green.
   - **Failed**: red.

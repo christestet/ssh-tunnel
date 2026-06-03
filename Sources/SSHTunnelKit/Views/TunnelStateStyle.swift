@@ -14,13 +14,13 @@ extension TunnelState {
         }
     }
 
-    /// Tint for the menu bar glyph, or `nil` to defer to the system (idle).
-    public var menuBarTintColor: NSColor? {
+    /// Tint for the menu bar glyph.
+    public var menuBarTintColor: NSColor {
         switch self {
         case .connected: return .systemGreen
         case .connecting, .reconnecting: return .systemYellow
         case .failed: return .systemRed
-        case .disconnected: return nil
+        case .disconnected: return .systemGray
         }
     }
 }
