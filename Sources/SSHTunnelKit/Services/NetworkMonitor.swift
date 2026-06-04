@@ -144,7 +144,10 @@ final class NetworkMonitor {
                             await controller.checkTunnelHealth()
                         }
                     } else if controller.wantsToBeConnected {
-                        if await self.canStartAutomatically(controller) {
+                        let canStart = await self.canStartAutomatically(controller)
+                        if Task.isCancelled || !self.isNetworkSatisfied { return }
+
+                        if canStart {
                             self.log(.info, .network, controller: controller, "recovery: starting tunnel (network ready)")
                             await controller.startTunnel()
                         } else {

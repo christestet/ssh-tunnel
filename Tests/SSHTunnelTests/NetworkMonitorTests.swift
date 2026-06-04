@@ -210,6 +210,49 @@ final class NetworkMonitorTests: XCTestCase {
     }
 
     @MainActor
+    func testNetworkDropDuringReadinessProbePreventsStartWhenProbeLaterSucceeds() async throws {
+        var settings = makeTestSettings()
+        settings.autostartOnLogin = true
+        settings.autostartReadinessProbeHost = "vpn-gateway.internal"
+        settings.autostartReadinessProbePort = 443
+        let masterClient = StubSSHMasterClient()
+        masterClient.resolvedOptions = [nil]
+        masterClient.checkResults = [preCheckMiss, masterReady]
+        let controller = TunnelController(
+            settings: settings,
+            notifier: SpyTunnelNotifier(),
+            masterClient: masterClient,
+            portChecker: StubPortChecker(),
+            startsMonitoring: false
+        )
+        controller.prepareForAutostart()
+        let manager = TunnelManager(
+            settingsStore: TunnelSettingsStore(tunnels: [settings]),
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            controllers: [controller]
+        )
+        let readiness = BlockingReadinessChecker()
+        let monitor = NetworkMonitor(
+            tunnelManager: manager,
+            pathSource: FakePathSource(),
+            settleDelay: 0,
+            readinessChecker: readiness,
+            readinessRetryDelay: 0.05,
+            readinessProbeTimeout: 0.01
+        )
+
+        monitor.handlePathUpdate(satisfied: true)
+        await waitUntil { readiness.probes.count == 1 }
+        monitor.handlePathUpdate(satisfied: false)
+        readiness.completeProbe(isReachable: true)
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(controller.state, .disconnected)
+        XCTAssertTrue(masterClient.startCalls.isEmpty)
+    }
+
+    @MainActor
     func testSettleDelayPreventsStartIfNetworkDropsBeforeRecoveryRuns() async throws {
         let settings = makeTestSettings()
         let masterClient = StubSSHMasterClient()
@@ -542,6 +585,47 @@ final class FakeReadinessChecker: NetworkReadinessChecking, @unchecked Sendable 
         state.withLock { state in
             state.probes.append(Probe(host: host, port: port, timeout: timeout))
             return state.reachable
+        }
+    }
+}
+
+final class BlockingReadinessChecker: NetworkReadinessChecking, @unchecked Sendable {
+    private struct State {
+        var probes: [FakeReadinessChecker.Probe] = []
+        var continuation: CheckedContinuation<Bool, Never>?
+        var completedResult: Bool?
+    }
+
+    private let state = Mutex(State())
+
+    var probes: [FakeReadinessChecker.Probe] {
+        state.withLock { $0.probes }
+    }
+
+    func completeProbe(isReachable: Bool) {
+        let continuation = state.withLock { state in
+            state.completedResult = isReachable
+            let continuation = state.continuation
+            state.continuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: isReachable)
+    }
+
+    func canReach(host: String, port: Int, timeout: TimeInterval) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let completedResult = state.withLock { state -> Bool? in
+                state.probes.append(.init(host: host, port: port, timeout: timeout))
+                if let completedResult = state.completedResult {
+                    return completedResult
+                }
+                state.continuation = continuation
+                return nil
+            }
+
+            if let completedResult {
+                continuation.resume(returning: completedResult)
+            }
         }
     }
 }
