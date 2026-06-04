@@ -18,6 +18,18 @@ final class HelpViewContentTests: XCTestCase {
         XCTAssertTrue(text.contains("already in use"))
     }
 
+    func testHelpContentMatchesActualMenuAndShortcuts() {
+        let text = HelpContent.sections
+            .map { "\($0.title)\n\($0.body)" }
+            .joined(separator: "\n")
+
+        // The Help shortcut is registered as [.command, .shift] on "?" in
+        // MenuBarView, so the documented glyph must be ⇧⌘? not ⌘?.
+        XCTAssertTrue(text.contains("⇧⌘?"))
+        // The More (…) menu has four items; "GitHub Repository" must be listed.
+        XCTAssertTrue(text.contains("GitHub Repository"))
+    }
+
     func testHelpContentLinksToOnlineDocumentation() {
         let text = HelpContent.sections
             .map { "\($0.title)\n\($0.body)" }

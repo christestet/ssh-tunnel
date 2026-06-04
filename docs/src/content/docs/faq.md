@@ -63,5 +63,5 @@ While the menu is open:
 | Shortcut | Action |
 | --- | --- |
 | `⌘ + ,` | Open Settings |
-| `⌘ + ?` | Open Help |
+| `⇧ + ⌘ + ?` | How to Use (in-app help) |
 | `⌘ + Q` | Quit |

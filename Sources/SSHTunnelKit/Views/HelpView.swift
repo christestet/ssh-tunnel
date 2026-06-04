@@ -115,7 +115,7 @@ enum HelpContent {
         HelpSection(
             title: "Menu & Port Pills",
             body: """
-            Each tunnel row has Active and Start at Login switches, Add Quick Forward and Check Now buttons, and shows the latest error. SSH Config and Quick Forward ports appear as localhost pills — click one while connected to open http://localhost:<port>. The bottom bar holds Add Tunnel, Settings, and a More (…) menu (Copy Debug Log, How to Use, Quit).
+            Each tunnel row has Active and Start at Login switches, Add Quick Forward and Check Now buttons, and shows the latest error. SSH Config and Quick Forward ports appear as localhost pills — click one while connected to open http://localhost:<port>. The bottom bar holds Add Tunnel, Settings, and a More (…) menu (Copy Debug Log, How to Use, GitHub Repository, Quit).
             """
         ),
         HelpSection(
@@ -135,7 +135,7 @@ enum HelpContent {
             body: """
             While the menu is open:
             • ⌘, — Open Settings
-            • ⌘? — Open Help
+            • ⇧⌘? — Open Help (How to Use)
             • ⌘Q — Quit App
             """
         ),
