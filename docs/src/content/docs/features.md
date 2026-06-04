@@ -57,7 +57,9 @@ See [Quick Forwards](/ssh-tunnel/guides/quick-forwards/).
 - Delay Start at Login until the network is ready, with an optional startup TCP
   check for VPN-only endpoints.
 
-See [Health Checks & Reconnects](/ssh-tunnel/guides/health-checks/).
+See [Settings](/ssh-tunnel/guides/settings/) to configure it and
+[Health Checks & Reconnects](/ssh-tunnel/guides/health-checks/) for the
+readiness behavior.
 
 ## Robust process lifecycle
 
@@ -76,8 +78,8 @@ See [SSH Command Mapping](/ssh-tunnel/reference/ssh-command-mapping/) and
 
 - Run diagnostics for required fields, `ssh -G`, SSH config forwards,
   ControlPath safety, and local port availability.
-- Menu keyboard shortcuts: `⌘ + ,` for Settings, `⌘ + ?` for Help, and
-  `⌘ + Q` to quit.
+- Menu keyboard shortcuts: `⌘ + ,` for Settings, `⇧ + ⌘ + ?` for How to Use,
+  and `⌘ + Q` to quit.
 
 See [Settings](/ssh-tunnel/guides/settings/) and
 [Debugging & Logs](/ssh-tunnel/reference/debugging/).

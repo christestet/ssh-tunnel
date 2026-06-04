@@ -4,9 +4,10 @@ description: Menu rows, clickable port pills, and the bottom action bar explaine
 ---
 
 Each configured tunnel appears as a menu row with a state indicator, forwarded
-port pills, an **Active** switch, a **Start at Login** switch, **Add Quick
-Forward**, and **Check Now**. The row also surfaces the latest error when a
-start, check, or reconnect fails.
+port pills, an **Active** switch, a **Start at Login** switch,
+[**Add Quick Forward**](/ssh-tunnel/guides/quick-forwards/), and **Check Now**.
+The row also surfaces the latest error when a start, check, or reconnect fails —
+see [Health Checks & Reconnects](/ssh-tunnel/guides/health-checks/).
 
 ## Menu bar icon state
 
@@ -29,7 +30,8 @@ each tunnel row.
 
 - While the tunnel is **connected**, click a pill to open
   `http://localhost:<port>` in your default browser.
-- A pill's context menu jumps to that tunnel in Settings.
+- A pill's context menu jumps to that tunnel in
+  [Settings](/ssh-tunnel/guides/settings/).
 - Quick Forward pills also have a remove button.
 
 ## The action bar
@@ -38,8 +40,10 @@ The bottom action bar keeps two single-tap actions — **Add Tunnel** and
 **Settings** — plus a **More (…)** menu containing:
 
 - **Copy Debug Log** — copies the in-memory log buffer to the clipboard and
-  reveals the persistent log file in Finder.
-- **How to Use** — opens the in-app help.
+  reveals the persistent log file in Finder. See
+  [Debugging & Logs](/ssh-tunnel/reference/debugging/).
+- **How to Use** — opens the in-app quick guide.
+- **GitHub Repository** — opens the project page in your browser.
 - **Quit**.
 
 ## Keyboard shortcuts
@@ -49,7 +53,7 @@ While the menu is open:
 | Shortcut | Action |
 | --- | --- |
 | `⌘ + ,` | Open Settings |
-| `⌘ + ?` | Open Help |
+| `⇧ + ⌘ + ?` | How to Use (in-app help) |
 | `⌘ + Q` | Quit |
 
 ## Single instance
