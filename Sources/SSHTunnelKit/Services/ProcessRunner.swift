@@ -40,11 +40,21 @@ func runProcess(
             await withCheckedContinuation { (cont: CheckedContinuation<ProcessExecution, Never>) in
                 box.process.terminationHandler = { proc in
                     let output = box.finishDraining()
-                    cont.resume(returning: ProcessExecution(
-                        exitCode: proc.terminationStatus,
-                        stdout: output.stdout,
-                        stderr: output.stderr
-                    ))
+                    // If the timeout branch already SIGTERM'd this child, its
+                    // termination handler fires with the *signal* status and an
+                    // empty stderr, racing — and usually beating — the timeout
+                    // task's own result. Honour the timeout marker here so the
+                    // "timed out" diagnostic isn't silently lost no matter which
+                    // task wins the group race.
+                    if box.didTimeOut {
+                        cont.resume(returning: timeoutResult(timeout: timeout, partial: output))
+                    } else {
+                        cont.resume(returning: ProcessExecution(
+                            exitCode: proc.terminationStatus,
+                            stdout: output.stdout,
+                            stderr: output.stderr
+                        ))
+                    }
                 }
                 do {
                     box.beginDraining()
@@ -75,6 +85,10 @@ func runProcess(
                 }
                 return nil
             }
+            // Record the timeout *before* terminating so the termination
+            // handler (which fires on SIGTERM) reports the timeout marker too,
+            // not the raw signal status.
+            box.markTimedOut()
             if box.process.isRunning {
                 box.process.terminate()
                 try? await Task.sleep(for: .seconds(1))
@@ -84,14 +98,7 @@ func runProcess(
             }
             // Hand back whatever we managed to drain before the timeout so the
             // failure is at least diagnosable, alongside the timeout marker.
-            let partial = box.bufferedOutput()
-            let note = "process timed out after \(Int(timeout))s"
-            let stderr = partial.stderr.isEmpty ? note : "\(partial.stderr)\n(\(note))"
-            return ProcessExecution(
-                exitCode: ProcessExecution.timeoutExitCode,
-                stdout: partial.stdout,
-                stderr: stderr
-            )
+            return timeoutResult(timeout: timeout, partial: box.bufferedOutput())
         }
         // Take the first *real* result. A nil means the timeout task observed
         // cancellation and bowed out; keep waiting for the genuine termination
@@ -108,6 +115,22 @@ func runProcess(
             exitCode: ProcessExecution.spawnFailedExitCode, stdout: "", stderr: ""
         )
     }
+}
+
+/// Builds the timeout result (marker exit code + a "timed out" note appended to
+/// whatever was drained) shared by the timeout task and the termination handler
+/// so both report the failure identically regardless of which wins the race.
+private func timeoutResult(
+    timeout: TimeInterval,
+    partial: (stdout: String, stderr: String)
+) -> ProcessExecution {
+    let note = "process timed out after \(Int(timeout))s"
+    let stderr = partial.stderr.isEmpty ? note : "\(partial.stderr)\n(\(note))"
+    return ProcessExecution(
+        exitCode: ProcessExecution.timeoutExitCode,
+        stdout: partial.stdout,
+        stderr: stderr
+    )
 }
 
 func runProcessSynchronously(
@@ -263,12 +286,20 @@ private final class ProcessBox: @unchecked Sendable {
     let stderr: Pipe
     private let outBuffer = OutputBuffer()
     private let errBuffer = OutputBuffer()
+    private let timedOut = Mutex(false)
 
     init(process: Process, stdout: Pipe, stderr: Pipe) {
         self.process = process
         self.stdout = stdout
         self.stderr = stderr
     }
+
+    /// Set by the timeout branch before it SIGTERMs the child, so the
+    /// termination handler can tell a deliberate timeout-kill apart from a
+    /// natural exit. Mutex-guarded: written on the timeout task, read on the
+    /// pipe/termination queue.
+    func markTimedOut() { timedOut.withLock { $0 = true } }
+    var didTimeOut: Bool { timedOut.withLock { $0 } }
 
     /// Start draining both pipes as data arrives, so a chatty child never
     /// blocks on a full pipe waiting for us to read.

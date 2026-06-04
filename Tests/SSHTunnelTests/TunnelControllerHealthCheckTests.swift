@@ -321,7 +321,7 @@ final class TunnelControllerHealthCheckTests: XCTestCase {
         XCTAssertEqual(controller.state, .connected)
 
         fakeMaster.simulateUnexpectedExit(code: 255, stderr: "ssh master exited unexpectedly\n")
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await waitUntil { controller.state == .reconnecting }
 
         XCTAssertEqual(controller.state, .reconnecting)
         XCTAssertEqual(controller.lastError, "ssh master exited unexpectedly")
@@ -346,7 +346,7 @@ final class TunnelControllerHealthCheckTests: XCTestCase {
         XCTAssertEqual(controller.state, .connected)
 
         fakeMaster.simulateUnexpectedExit(code: 255, stderr: "No route to host\n")
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await waitUntil { controller.state == .reconnecting }
 
         XCTAssertEqual(controller.state, .reconnecting)
         XCTAssertTrue(notifier.interruptedHosts.isEmpty)
@@ -367,7 +367,7 @@ final class TunnelControllerHealthCheckTests: XCTestCase {
 
         await controller.startTunnel()
         fakeMaster.simulateUnexpectedExit(code: 1, stderr: "")
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await waitUntil { controller.lastError != nil }
 
         XCTAssertEqual(controller.lastError, "ssh master exited (code 1)")
     }

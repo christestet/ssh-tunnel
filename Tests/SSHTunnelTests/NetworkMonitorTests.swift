@@ -38,8 +38,8 @@ final class NetworkMonitorTests: XCTestCase {
         monitor.handlePathUpdate(satisfied: false)
         monitor.handlePathUpdate(satisfied: true)
 
-        // Give the async health check a moment to run
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // Wait for the async health check to actually run.
+        await waitUntil { runner.calls.contains { $0.contains("-O") && $0.contains("check") } }
 
         // The controller should still be connected (health check passed)
         XCTAssertEqual(controller.state, .connected)
@@ -79,7 +79,7 @@ final class NetworkMonitorTests: XCTestCase {
         monitor.handlePathUpdate(satisfied: false)
         monitor.handlePathUpdate(satisfied: true)
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await waitUntil { controller.state == .reconnecting }
 
         // The health check detected a dead tunnel → should be reconnecting
         XCTAssertEqual(controller.state, .reconnecting)
@@ -110,7 +110,7 @@ final class NetworkMonitorTests: XCTestCase {
         let monitor = NetworkMonitor(tunnelManager: manager, pathSource: FakePathSource(), settleDelay: 0)
         monitor.handlePathUpdate(satisfied: true)
 
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntil { controller.state == .connected && masterClient.startCalls.count == 1 }
 
         XCTAssertEqual(controller.state, .connected)
         XCTAssertEqual(masterClient.startCalls.count, 1)
@@ -472,7 +472,7 @@ final class NetworkMonitorTests: XCTestCase {
         pathSource.emit(satisfied: true)
 
         // Allow the recovery Task to run.
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntil { controller.state == .connected }
 
         XCTAssertEqual(controller.state, .connected)
     }
@@ -518,7 +518,68 @@ final class NetworkMonitorTests: XCTestCase {
 
         monitor.handleSystemWake()
 
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntil { controller.state == .connected }
+        XCTAssertEqual(controller.state, .connected)
+    }
+
+    // MARK: - Wake wiring (injected source)
+
+    /// The previous tests call `handleSystemWake()` directly. This one drives a
+    /// wake through the injected `SystemWakeSource`, covering the observation
+    /// wiring (`wakeSource.wakes()` → `handleSystemWake`) that used to talk to
+    /// `NSWorkspace` directly and was therefore untestable.
+    @MainActor
+    func testWakeDeliveredViaInjectedSourceTriggersHealthCheck() async throws {
+        func checkCount(_ runner: StubSSHRunner) -> Int {
+            runner.calls.filter { $0.contains("-O") && $0.contains("check") }.count
+        }
+
+        let settings = makeTestSettings()
+        let runner = StubSSHRunner(results: [
+            gEmpty,       // resolveOptions
+            masterReady,  // waitForMasterReady
+            SSHResult(exitCode: 0, stdout: "", stderr: ""),  // check after path satisfied
+            SSHResult(exitCode: 0, stdout: "", stderr: "")   // check after wake
+        ])
+        let controller = TunnelController(
+            settings: settings, sshRunner: runner, notifier: SpyTunnelNotifier(),
+            portChecker: StubPortChecker(),
+            startsMonitoring: false
+        )
+
+        await controller.startTunnel()
+        XCTAssertEqual(controller.state, .connected)
+
+        let manager = TunnelManager(
+            settingsStore: TunnelSettingsStore(tunnels: [settings]),
+            sshRunner: runner,
+            notifier: SpyTunnelNotifier(),
+            controllers: [controller]
+        )
+
+        let pathSource = FakePathSource()
+        let wakeSource = FakeWakeSource()
+        let monitor = NetworkMonitor(
+            tunnelManager: manager,
+            pathSource: pathSource,
+            wakeSource: wakeSource,
+            settleDelay: 0
+        )
+        _ = monitor
+
+        // Wake-recovery is only eligible once the network is satisfied; let that
+        // path-driven check land first so the wake's check is distinguishable.
+        pathSource.emit(satisfied: true)
+        await waitUntil { checkCount(runner) == 1 }
+        let checksBeforeWake = checkCount(runner)
+
+        wakeSource.emit()
+        await waitUntil { checkCount(runner) > checksBeforeWake }
+
+        XCTAssertGreaterThan(
+            checkCount(runner), checksBeforeWake,
+            "a wake from the injected source must reach handleSystemWake through the wiring"
+        )
         XCTAssertEqual(controller.state, .connected)
     }
 }
@@ -539,6 +600,23 @@ final class FakePathSource: NetworkPathSource, @unchecked Sendable {
 
     func emit(satisfied: Bool) {
         continuation.yield(satisfied)
+    }
+}
+
+final class FakeWakeSource: SystemWakeSource, @unchecked Sendable {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        var c: AsyncStream<Void>.Continuation!
+        self.stream = AsyncStream<Void> { c = $0 }
+        self.continuation = c
+    }
+
+    func wakes() -> AsyncStream<Void> { stream }
+
+    func emit() {
+        continuation.yield(())
     }
 }
 
