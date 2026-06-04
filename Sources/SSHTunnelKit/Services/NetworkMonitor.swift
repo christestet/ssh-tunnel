@@ -30,12 +30,36 @@ final class SystemNetworkPathSource: NetworkPathSource, Sendable {
     }
 }
 
+/// Abstraction over the system "machine woke from sleep" signal, exposed as an
+/// `AsyncStream<Void>` so tests can drive wake events without an `NSWorkspace`.
+protocol SystemWakeSource: Sendable {
+    func wakes() -> AsyncStream<Void>
+}
+
+/// Real implementation backed by `NSWorkspace.didWakeNotification`.
+final class WorkspaceWakeSource: SystemWakeSource, Sendable {
+    func wakes() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let task = Task {
+                let stream = NSWorkspace.shared.notificationCenter
+                    .notifications(named: NSWorkspace.didWakeNotification)
+                for await _ in stream {
+                    continuation.yield(())
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
 /// Monitors network path changes and system wake events, triggering immediate
 /// health checks or connection attempts on tunnels.
 @MainActor
 final class NetworkMonitor {
     private let tunnelManager: TunnelManager
     private let pathSource: NetworkPathSource
+    private let wakeSource: SystemWakeSource
     private let settleDelay: TimeInterval
     private let readinessChecker: NetworkReadinessChecking
     private let readinessRetryDelay: TimeInterval
@@ -49,6 +73,7 @@ final class NetworkMonitor {
     init(
         tunnelManager: TunnelManager,
         pathSource: NetworkPathSource = SystemNetworkPathSource(),
+        wakeSource: SystemWakeSource = WorkspaceWakeSource(),
         settleDelay: TimeInterval = 1.5,
         readinessChecker: NetworkReadinessChecking = TCPNetworkReadinessChecker(),
         readinessRetryDelay: TimeInterval = 5,
@@ -56,6 +81,7 @@ final class NetworkMonitor {
     ) {
         self.tunnelManager = tunnelManager
         self.pathSource = pathSource
+        self.wakeSource = wakeSource
         self.settleDelay = settleDelay
         self.readinessChecker = readinessChecker
         self.readinessRetryDelay = readinessRetryDelay
@@ -71,10 +97,8 @@ final class NetworkMonitor {
         )
 
         observationTasks.append(
-            Task { @MainActor [weak self] in
-                let stream = NSWorkspace.shared.notificationCenter
-                    .notifications(named: NSWorkspace.didWakeNotification)
-                for await _ in stream {
+            Task { @MainActor [weak self, wakeSource] in
+                for await _ in wakeSource.wakes() {
                     guard let self else { return }
                     self.handleSystemWake()
                 }

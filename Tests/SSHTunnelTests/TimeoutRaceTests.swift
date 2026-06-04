@@ -151,4 +151,48 @@ final class TimeoutRaceTests: XCTestCase {
         XCTAssertEqual(lines.count, 50000)
         XCTAssertEqual(lines.last.map(String.init), "50000")
     }
+
+    // MARK: - Real timeout (the "ssh hangs" path that drives reconnects)
+
+    /// A child that outlives the deadline must be torn down and surfaced as a
+    /// failure with a diagnosable "timed out" note. This is the branch that
+    /// triggers the reconnect loop when `ssh -O check` (or `ssh -G`) hangs; it
+    /// was previously only exercised via the *cancellation* path, never a real
+    /// timeout.
+    func testRunProcessReportsTimeoutWhenChildOutlivesDeadline() async {
+        let result = await runProcess(
+            executable: URL(fileURLWithPath: "/bin/sleep"),
+            arguments: ["5"],
+            timeout: 0.2
+        )
+
+        XCTAssertEqual(
+            result.exitCode, ProcessExecution.timeoutExitCode,
+            "a real timeout must report the marker, not the child's SIGTERM status"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("timed out"),
+            "the timeout must be diagnosable in stderr, got: \(result.stderr)"
+        )
+    }
+
+    /// The synchronous twin has no task-group race: after the deadline it
+    /// terminates the child and returns the dedicated `timeoutExitCode` marker
+    /// plus the "timed out" note verbatim.
+    func testRunProcessSynchronouslyReportsTimeoutWhenChildOutlivesDeadline() {
+        let result = runProcessSynchronously(
+            executable: URL(fileURLWithPath: "/bin/sleep"),
+            arguments: ["5"],
+            timeout: 0.2
+        )
+
+        XCTAssertEqual(
+            result.exitCode, ProcessExecution.timeoutExitCode,
+            "the synchronous path must report the timeout marker exit code"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("timed out"),
+            "the timeout must be diagnosable in stderr, got: \(result.stderr)"
+        )
+    }
 }

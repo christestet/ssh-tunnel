@@ -246,7 +246,7 @@ final class TunnelControllerStartStopTests: XCTestCase {
         fake.simulateUnexpectedExit(code: 255, stderr: "Connection reset by peer")
 
         // Allow watchMaster to observe the exit.
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntil { controller.state != .connected }
 
         XCTAssertNotEqual(controller.state, .connected)
         XCTAssertEqual(

@@ -858,50 +858,60 @@ private struct ForwardPortPills: View {
 private struct PortPillFlow: Layout {
     var spacing: CGFloat = 4
 
+    private var engine: PortPillFlowEngine { PortPillFlowEngine(spacing: spacing) }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
-        let rows = layoutRows(subviews: subviews, maxWidth: maxWidth)
+        let rows = engine.rows(for: subviews.map { $0.sizeThatFits(.unspecified) }, maxWidth: maxWidth)
         let width = rows.map { $0.width }.max() ?? 0
         let height = rows.reduce(0) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * spacing
         return CGSize(width: min(width, maxWidth), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let rows = layoutRows(subviews: subviews, maxWidth: bounds.width)
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let rows = engine.rows(for: sizes, maxWidth: bounds.width)
         var y = bounds.minY
         for row in rows {
             var x = bounds.minX
-            for item in row.items {
-                let size = subviews[item.index].sizeThatFits(.unspecified)
-                subviews[item.index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            for index in row.indices {
+                let size = sizes[index]
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
             y += row.height + spacing
         }
     }
+}
 
-    private struct Row {
-        var items: [(index: Int, size: CGSize)] = []
+/// The pure row-breaking math behind `PortPillFlow`, extracted from the SwiftUI
+/// `Layout` conformance so the wrapping logic (off-by-one prone at row
+/// boundaries) can be unit-tested against plain `CGSize`s without constructing
+/// `Layout.Subviews`.
+struct PortPillFlowEngine {
+    var spacing: CGFloat = 4
+
+    struct Row: Equatable {
+        var indices: [Int] = []
         var width: CGFloat = 0
         var height: CGFloat = 0
     }
 
-    private func layoutRows(subviews: Subviews, maxWidth: CGFloat) -> [Row] {
+    func rows(for sizes: [CGSize], maxWidth: CGFloat) -> [Row] {
         var rows: [Row] = []
         var current = Row()
-        for (i, sub) in subviews.enumerated() {
-            let size = sub.sizeThatFits(.unspecified)
-            let prospective = current.width + (current.items.isEmpty ? 0 : spacing) + size.width
-            if prospective > maxWidth, !current.items.isEmpty {
+        for (i, size) in sizes.enumerated() {
+            let prospective = current.width + (current.indices.isEmpty ? 0 : spacing) + size.width
+            if prospective > maxWidth, !current.indices.isEmpty {
                 rows.append(current)
                 current = Row()
             }
-            if !current.items.isEmpty { current.width += spacing }
-            current.items.append((i, size))
+            if !current.indices.isEmpty { current.width += spacing }
+            current.indices.append(i)
             current.width += size.width
             current.height = max(current.height, size.height)
         }
-        if !current.items.isEmpty { rows.append(current) }
+        if !current.indices.isEmpty { rows.append(current) }
         return rows
     }
 }

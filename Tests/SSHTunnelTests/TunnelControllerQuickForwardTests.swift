@@ -48,7 +48,7 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
         try manager.updateSettings(added)
 
         // Let the async port assignment + notification round-trip settle.
-        try? await Task.sleep(for: .milliseconds(200))
+        await waitUntil { controller.settings.quickForwards.first?.localPort != nil }
         let assignedPort = controller.settings.quickForwards.first?.localPort
         XCTAssertNotNil(assignedPort)
         XCTAssertEqual(controller.forwardedPorts, [assignedPort!])
@@ -57,7 +57,9 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
         try await manager.removeQuickForward(forwardId, from: settings.id)
 
         // Allow any stale `.tunnelSettingsChanged` broadcasts to be delivered.
-        try? await Task.sleep(for: .milliseconds(200))
+        await waitUntil {
+            controller.settings.quickForwards.isEmpty && controller.forwardedPorts.isEmpty
+        }
 
         XCTAssertEqual(controller.settings.quickForwards, [], "forward must stay removed")
         XCTAssertEqual(controller.forwardedPorts, [], "removed port must not linger")
@@ -147,8 +149,8 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
         controller.updateSettings(updated)
         
         // Then it should find a free port and apply it
-        try? await Task.sleep(for: .milliseconds(200))
-        
+        await waitUntil { masterClient.addForwardCalls.count == 1 }
+
         XCTAssertEqual(masterClient.addForwardCalls.count, 1)
         let call = masterClient.addForwardCalls.first
         XCTAssertEqual(call?.remotePort, 8080)
@@ -186,8 +188,8 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
         controller.updateSettings(updated)
         
         // Then it should cancel the forward
-        try? await Task.sleep(for: .milliseconds(200))
-        
+        await waitUntil { masterClient.removeForwardCalls.count == 1 }
+
         XCTAssertEqual(masterClient.removeForwardCalls.count, 1)
         let call = masterClient.removeForwardCalls.first
         XCTAssertEqual(call?.remotePort, 8080)
@@ -445,11 +447,13 @@ final class TunnelControllerQuickForwardTests: XCTestCase {
         controller.updateSettings(updated)
         
         // Then it should cancel 8080 and add 8081
-        try? await Task.sleep(for: .milliseconds(200))
-        
+        await waitUntil {
+            masterClient.removeForwardCalls.count == 1 && masterClient.addForwardCalls.count == 2
+        }
+
         XCTAssertEqual(masterClient.removeForwardCalls.count, 1)
         XCTAssertEqual(masterClient.removeForwardCalls.first?.remotePort, 8080)
-        
+
         XCTAssertEqual(masterClient.addForwardCalls.count, 2) // One from start, one from update
         XCTAssertEqual(masterClient.addForwardCalls.last?.remotePort, 8081)
     }

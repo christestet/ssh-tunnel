@@ -130,10 +130,11 @@ final class TunnelControllerAdoptionTests: XCTestCase {
 
         XCTAssertEqual(controller.state, .connected,
                        "After killing the orphan and freeing the port, spawn must succeed")
-        // The SIGTERM is fire-and-forget; give the OS a brief moment.
-        try? await Task.sleep(for: .seconds(1))
-        XCTAssertFalse(sleepProc.isRunning,
-                       "Orphan ssh-like process must have been SIGTERMed")
+        // The SIGTERM is fire-and-forget; poll until the OS reaps it instead of
+        // betting on a fixed delay (scheduler-dependent — a flakiness magnet).
+        let terminated = await waitUntil(timeout: 3) { !sleepProc.isRunning }
+        XCTAssertTrue(terminated,
+                      "Orphan ssh-like process must have been SIGTERMed")
     }
 
     @MainActor
@@ -183,8 +184,8 @@ final class TunnelControllerAdoptionTests: XCTestCase {
         await controller.startTunnel()
 
         XCTAssertEqual(controller.state, .connected)
-        try? await Task.sleep(for: .seconds(1))
-        XCTAssertFalse(sleepProc.isRunning)
+        let terminated = await waitUntil(timeout: 3) { !sleepProc.isRunning }
+        XCTAssertTrue(terminated)
     }
 
     @MainActor
