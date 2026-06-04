@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/christestet/ssh-tunnel/compare/v2.5.0...v2.5.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* surface ssh timeout diagnostic in async runProcess; expand test coverage ([#20](https://github.com/christestet/ssh-tunnel/issues/20)) ([0f0a906](https://github.com/christestet/ssh-tunnel/commit/0f0a9069bea8e364a40734a26a9e6a7145a44353))
+
 ## [2.5.0](https://github.com/christestet/ssh-tunnel/compare/v2.4.0...v2.5.0) (2026-06-03)
 
 
