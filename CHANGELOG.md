@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.2](https://github.com/christestet/ssh-tunnel/compare/v2.5.1...v2.5.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* declare NSLocalNetworkUsageDescription so macOS shows the local network prompt ([#28](https://github.com/christestet/ssh-tunnel/issues/28)) ([aa7c9a3](https://github.com/christestet/ssh-tunnel/commit/aa7c9a35df6f73ecada5d4569c84610ac3201925))
+
 ## [2.5.1](https://github.com/christestet/ssh-tunnel/compare/v2.5.0...v2.5.1) (2026-06-04)
 
 
