@@ -582,24 +582,129 @@ final class NetworkMonitorTests: XCTestCase {
         )
         XCTAssertEqual(controller.state, .connected)
     }
+
+    // MARK: - Reconnects are parked while the path is down, resumed on return
+
+    @MainActor
+    func testNetworkDropParksReconnectingTunnelAndRestoreResumesIt() async throws {
+        let settings = makeTestSettings()
+        let masterClient = StubSSHMasterClient()
+        masterClient.resolvedOptions = [nil]
+        masterClient.checkResults = [preCheckMiss]
+        struct SpawnError: Error {}
+        masterClient.startMasterError = SpawnError()
+        let controller = TunnelController(
+            settings: settings,
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            masterClient: masterClient,
+            portChecker: StubPortChecker(),
+            startsMonitoring: false
+        )
+
+        await controller.startTunnel()
+        XCTAssertEqual(controller.state, .reconnecting)
+        XCTAssertNotNil(controller.nextReconnectAt)
+
+        let manager = TunnelManager(
+            settingsStore: TunnelSettingsStore(tunnels: [settings]),
+            sshRunner: StubSSHRunner(results: []),
+            notifier: SpyTunnelNotifier(),
+            controllers: [controller]
+        )
+        let monitor = NetworkMonitor(tunnelManager: manager, pathSource: FakePathSource(), settleDelay: 0)
+
+        // Path drops: the pending reconnect must be parked, not keep firing
+        // ssh attempts into a dead network.
+        monitor.handlePathUpdate(satisfied: false)
+
+        XCTAssertEqual(controller.state, .reconnecting)
+        XCTAssertTrue(controller.isReconnectParkedForNetwork)
+        XCTAssertNil(controller.nextReconnectAt)
+
+        // Path returns and ssh can now succeed — recovery must resume the
+        // parked reconnect (plain startTunnel() would ignore .reconnecting).
+        masterClient.startMasterError = nil
+        masterClient.resolvedOptions = [nil]
+        masterClient.checkResults = [preCheckMiss, masterReady]
+
+        monitor.handlePathUpdate(satisfied: true)
+
+        await waitUntil { controller.state == .connected }
+        XCTAssertEqual(controller.state, .connected)
+        XCTAssertFalse(controller.isReconnectParkedForNetwork)
+    }
+
+    // MARK: - Interface changes while staying satisfied
+
+    @MainActor
+    func testInterfaceChangeWhileSatisfiedTriggersHealthCheck() async throws {
+        func checkCount(_ runner: StubSSHRunner) -> Int {
+            runner.calls.filter { $0.contains("-O") && $0.contains("check") }.count
+        }
+
+        let settings = makeTestSettings()
+        let runner = StubSSHRunner(results: [
+            gEmpty,       // resolveOptions
+            masterReady,  // adopt pre-check succeeds → connected
+            SSHResult(exitCode: 0, stdout: "", stderr: ""),  // check after first satisfied path
+            SSHResult(exitCode: 0, stdout: "", stderr: "")   // check after interface change
+        ])
+        let controller = TunnelController(
+            settings: settings, sshRunner: runner, notifier: SpyTunnelNotifier(),
+            portChecker: StubPortChecker(),
+            startsMonitoring: false
+        )
+
+        await controller.startTunnel()
+        XCTAssertEqual(controller.state, .connected)
+        let baseline = checkCount(runner)
+
+        let manager = TunnelManager(
+            settingsStore: TunnelSettingsStore(tunnels: [settings]),
+            sshRunner: runner,
+            notifier: SpyTunnelNotifier(),
+            controllers: [controller]
+        )
+        let monitor = NetworkMonitor(tunnelManager: manager, pathSource: FakePathSource(), settleDelay: 0)
+
+        monitor.handlePathUpdate(NetworkPathSnapshot(isSatisfied: true, interfaceSignature: "en0"))
+        await waitUntil { checkCount(runner) == baseline + 1 }
+        XCTAssertEqual(checkCount(runner), baseline + 1)
+
+        // Wi-Fi → Ethernet (or a different Wi-Fi): the path never went
+        // unsatisfied, but connections may be dead — health must be re-verified.
+        monitor.handlePathUpdate(NetworkPathSnapshot(isSatisfied: true, interfaceSignature: "en1"))
+        await waitUntil { checkCount(runner) == baseline + 2 }
+
+        XCTAssertEqual(
+            checkCount(runner), baseline + 2,
+            "switching networks while staying satisfied must re-verify tunnel health"
+        )
+        XCTAssertEqual(controller.state, .connected)
+    }
 }
 
 // MARK: - Test doubles for NetworkMonitor
 
 final class FakePathSource: NetworkPathSource, @unchecked Sendable {
-    private let stream: AsyncStream<Bool>
-    private let continuation: AsyncStream<Bool>.Continuation
+    private let stream: AsyncStream<NetworkPathSnapshot>
+    private let continuation: AsyncStream<NetworkPathSnapshot>.Continuation
 
     init() {
-        var c: AsyncStream<Bool>.Continuation!
-        self.stream = AsyncStream<Bool> { c = $0 }
+        var c: AsyncStream<NetworkPathSnapshot>.Continuation!
+        self.stream = AsyncStream<NetworkPathSnapshot> { c = $0 }
         self.continuation = c
     }
 
-    func paths() -> AsyncStream<Bool> { stream }
+    func paths() -> AsyncStream<NetworkPathSnapshot> { stream }
 
     func emit(satisfied: Bool) {
-        continuation.yield(satisfied)
+        continuation.yield(NetworkPathSnapshot(isSatisfied: satisfied))
+    }
+
+    func emit(_ snapshot: NetworkPathSnapshot) {
+        continuation.yield(snapshot)
     }
 }
 

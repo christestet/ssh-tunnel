@@ -2,26 +2,48 @@ import AppKit
 import Foundation
 import Network
 
+/// Reduced view of an `NWPath` carrying just what the monitor reacts to:
+/// overall reachability plus a fingerprint of the interfaces in use. The
+/// fingerprint detects "still satisfied, but over a different network"
+/// transitions (Wi-Fi → Ethernet, a different Wi-Fi, VPN up/down) that never
+/// pass through `.unsatisfied` yet invalidate established connections.
+struct NetworkPathSnapshot: Equatable, Sendable {
+    let isSatisfied: Bool
+    let interfaceSignature: String
+
+    init(isSatisfied: Bool, interfaceSignature: String = "") {
+        self.isSatisfied = isSatisfied
+        self.interfaceSignature = interfaceSignature
+    }
+
+    init(path: NWPath) {
+        self.init(
+            isSatisfied: path.status == .satisfied,
+            interfaceSignature: path.availableInterfaces.map(\.name).sorted().joined(separator: ",")
+        )
+    }
+}
+
 /// Abstraction over NWPathMonitor that exposes path changes as an
-/// `AsyncStream<Bool>` (`true` = path satisfied). Enables tests to drive
-/// path updates without standing up a real `NWPathMonitor`.
+/// `AsyncStream<NetworkPathSnapshot>`. Enables tests to drive path updates
+/// without standing up a real `NWPathMonitor`.
 protocol NetworkPathSource: Sendable {
-    func paths() -> AsyncStream<Bool>
+    func paths() -> AsyncStream<NetworkPathSnapshot>
 }
 
 /// Real implementation backed by `NWPathMonitor`.
 ///
 /// `NWPathMonitor` now conforms to `AsyncSequence`, so we iterate it directly
 /// instead of bridging `pathUpdateHandler` through a `DispatchQueue`. The
-/// `AsyncStream` is kept only to adapt `NWPath` to the `Bool` the protocol
+/// `AsyncStream` is kept only to adapt `NWPath` to the snapshot the protocol
 /// vends; cancelling the consuming task ends iteration and tears the monitor
 /// down.
 final class SystemNetworkPathSource: NetworkPathSource, Sendable {
-    func paths() -> AsyncStream<Bool> {
+    func paths() -> AsyncStream<NetworkPathSnapshot> {
         AsyncStream { continuation in
             let task = Task {
                 for await path in NWPathMonitor() {
-                    continuation.yield(path.status == .satisfied)
+                    continuation.yield(NetworkPathSnapshot(path: path))
                 }
                 continuation.finish()
             }
@@ -64,11 +86,11 @@ final class NetworkMonitor {
     private let readinessChecker: NetworkReadinessChecking
     private let readinessRetryDelay: TimeInterval
     private let readinessProbeTimeout: TimeInterval
-    private var lastSatisfied: Bool = false
+    private var lastSnapshot: NetworkPathSnapshot?
     private var observationTasks: [Task<Void, Never>] = []
     private var recoveryTask: Task<Void, Never>?
 
-    var isNetworkSatisfied: Bool { lastSatisfied }
+    var isNetworkSatisfied: Bool { lastSnapshot?.isSatisfied ?? false }
 
     init(
         tunnelManager: TunnelManager,
@@ -89,9 +111,9 @@ final class NetworkMonitor {
 
         observationTasks.append(
             Task { @MainActor [weak self, pathSource] in
-                for await satisfied in pathSource.paths() {
+                for await snapshot in pathSource.paths() {
                     guard let self else { return }
-                    self.handlePathUpdate(satisfied: satisfied)
+                    self.handlePathUpdate(snapshot)
                 }
             }
         )
@@ -118,15 +140,43 @@ final class NetworkMonitor {
         recoveryTask = nil
     }
 
-    /// Internal so tests can simulate transitions.
+    /// Convenience for tests and call sites that only care about reachability.
     func handlePathUpdate(satisfied: Bool) {
-        let transitionToSatisfied = satisfied && !lastSatisfied
-        if satisfied != lastSatisfied {
+        handlePathUpdate(NetworkPathSnapshot(
+            isSatisfied: satisfied,
+            interfaceSignature: lastSnapshot?.interfaceSignature ?? ""
+        ))
+    }
+
+    /// Internal so tests can simulate transitions.
+    func handlePathUpdate(_ snapshot: NetworkPathSnapshot) {
+        let previous = lastSnapshot
+        guard snapshot != previous else { return }
+        lastSnapshot = snapshot
+
+        let satisfied = snapshot.isSatisfied
+        let wasSatisfied = previous?.isSatisfied ?? false
+        if satisfied != wasSatisfied {
             TunnelLog.shared.log(.notice, .network, "network path \(satisfied ? "satisfied" : "unsatisfied")")
         }
-        lastSatisfied = satisfied
 
-        if transitionToSatisfied {
+        // Keep every controller's view of the network current: while the path
+        // is down, controllers park pending reconnects instead of burning
+        // backoff attempts on ssh processes that cannot succeed.
+        for controller in tunnelManager.controllers {
+            controller.setNetworkAvailable(satisfied)
+        }
+
+        if satisfied && !wasSatisfied {
+            recoverDesiredTunnels()
+        } else if satisfied, let previous, snapshot.interfaceSignature != previous.interfaceSignature {
+            // Still satisfied but over different interfaces (Wi-Fi → Ethernet,
+            // another Wi-Fi, VPN up/down): established connections may be dead
+            // without any unsatisfied transition — re-verify and resume.
+            TunnelLog.shared.log(
+                .notice, .network,
+                "network interfaces changed (\(previous.interfaceSignature.isEmpty ? "-" : previous.interfaceSignature) -> \(snapshot.interfaceSignature.isEmpty ? "-" : snapshot.interfaceSignature))"
+            )
             recoverDesiredTunnels()
         } else if !satisfied {
             recoveryTask?.cancel()
@@ -163,20 +213,25 @@ final class NetworkMonitor {
 
                 for controller in self.tunnelManager.controllers {
                     if Task.isCancelled { return }
-                    if controller.isActive {
-                        if shouldCheckActiveTunnels {
-                            await controller.checkTunnelHealth()
-                        }
-                    } else if controller.wantsToBeConnected {
+                    // A parked reconnect sits in `.reconnecting` (which counts
+                    // as active) with no scheduled retry — it must be resumed
+                    // here, not health-checked.
+                    let needsStart = controller.wantsToBeConnected
+                        && (controller.isReconnectParkedForNetwork || !controller.isActive)
+                    if needsStart {
                         let canStart = await self.canStartAutomatically(controller)
                         if Task.isCancelled || !self.isNetworkSatisfied { return }
 
                         if canStart {
                             self.log(.info, .network, controller: controller, "recovery: starting tunnel (network ready)")
-                            await controller.startTunnel()
+                            await controller.resumeAfterNetworkRestored()
                         } else {
                             self.log(.notice, .network, controller: controller, "recovery: deferred — readiness probe to \(controller.settings.autostartReadinessProbeHost):\(controller.settings.autostartReadinessProbePort) not reachable yet")
                             hasPendingReadiness = true
+                        }
+                    } else if controller.isActive {
+                        if shouldCheckActiveTunnels {
+                            await controller.checkTunnelHealth()
                         }
                     }
                 }

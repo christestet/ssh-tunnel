@@ -31,5 +31,7 @@
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>
     <string>Local build</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>SSH Tunnel connects to SSH servers and probes hosts on your local network to detect when your tunnels are reachable and to monitor their health.</string>
 </dict>
 </plist>

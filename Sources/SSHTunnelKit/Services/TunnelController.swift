@@ -108,6 +108,14 @@ final class TunnelController: Identifiable {
     private var userInitiatedStop = false
     private var hasRequestedConnection = false
     private var reconnectTask: Task<Void, Never>?
+    /// Last network availability pushed by [[NetworkMonitor]]. Defaults to true
+    /// so controllers running without a monitor (tests, previews) keep the
+    /// historical behaviour.
+    private var networkAvailable = true
+    /// True while a reconnect is parked because the network path is down: no
+    /// countdown, no ssh attempts. NetworkMonitor resumes the tunnel via
+    /// `resumeAfterNetworkRestored()` once the path is satisfied again.
+    private(set) var isReconnectParkedForNetwork = false
     private var masterHandle: SSHLongRunningProcess?
     private var masterWatchTask: Task<Void, Never>?
     private let maxReconnectAttempts: Int
@@ -197,6 +205,36 @@ final class TunnelController: Identifiable {
         hasRequestedConnection = true
         userInitiatedStop = false
         lastError = nil
+    }
+
+    /// Pushed by [[NetworkMonitor]] on every path update. While the path is
+    /// unsatisfied, firing reconnect attempts only spawns ssh processes that
+    /// cannot succeed and burns the backoff budget — so a pending reconnect is
+    /// parked instead. It stays in `.reconnecting` (the user still wants the
+    /// tunnel up) until the monitor calls `resumeAfterNetworkRestored()`.
+    func setNetworkAvailable(_ available: Bool) {
+        networkAvailable = available
+        guard !available, state == .reconnecting, !isReconnectParkedForNetwork else { return }
+        reconnectTask?.cancel()
+        nextReconnectAt = nil
+        isReconnectParkedForNetwork = true
+        log(.notice, .reconnect, "network path down — parking reconnect until it returns")
+    }
+
+    /// Recovery entry point for [[NetworkMonitor]]: (re)starts a tunnel the
+    /// user wants up after the network path returned or changed. Handles both
+    /// a parked reconnect (state stayed `.reconnecting`, which the public
+    /// `startTunnel()` would ignore as "already active") and a plain start
+    /// from `.failed`/`.disconnected`.
+    func resumeAfterNetworkRestored() async {
+        let wasParked = isReconnectParkedForNetwork
+        isReconnectParkedForNetwork = false
+        if wasParked {
+            // A restored network is a fresh situation — give it a fresh
+            // attempt budget instead of resuming deep in the backoff curve.
+            reconnectAttempt = 0
+        }
+        await startTunnel(allowRestartWhileActive: wasParked)
     }
 
     func updateSettings(_ newSettings: TunnelSettings) {
@@ -460,6 +498,7 @@ final class TunnelController: Identifiable {
         hasRequestedConnection = true
         userInitiatedStop = false
         reconnectTask?.cancel()
+        isReconnectParkedForNetwork = false
         nextReconnectAt = nil
         // A fresh start (user toggle, autostart, or network/wake recovery) must
         // not be capped by the previous run's backoff counter. Without this
@@ -646,6 +685,7 @@ final class TunnelController: Identifiable {
         resolvePortConflict(localPort: nil)
         activeConfigForwardOverrides = [:]
         reconnectTask?.cancel()
+        isReconnectParkedForNetwork = false
         masterWatchTask?.cancel()
         masterWatchTask = nil
         nextReconnectAt = nil
@@ -856,17 +896,37 @@ final class TunnelController: Identifiable {
 
     private func scheduleReconnect() {
         reconnectTask?.cancel()
+        // No network — retrying would just spawn ssh processes that cannot
+        // succeed. Park; NetworkMonitor resumes us when the path returns.
+        if !networkAvailable {
+            state = .reconnecting
+            nextReconnectAt = nil
+            isReconnectParkedForNetwork = true
+            log(.notice, .reconnect, "reconnect parked — waiting for network path")
+            return
+        }
         if reconnectAttempt >= maxReconnectAttempts {
             let base = lastError ?? "Tunnel failed"
-            log(.error, .reconnect, "giving up after \(maxReconnectAttempts) reconnect attempts")
-            markFailed(base + " — gave up after \(maxReconnectAttempts) reconnect attempts. Toggle the tunnel off and on to retry.")
-            return
+            // The attempt cap exists so misconfigurations (bad key, wrong
+            // host) don't retry forever. A *transient* network failure is not
+            // that: DNS/VPN/Wi-Fi can stay broken for longer than the cap and
+            // parking in `.failed` would strand the tunnel until the user
+            // toggles it off and on. Keep retrying at the capped backoff.
+            if !SSHErrorClassifier.isTransientNetworkError(base) {
+                log(.error, .reconnect, "giving up after \(maxReconnectAttempts) reconnect attempts")
+                markFailed(base + " — gave up after \(maxReconnectAttempts) reconnect attempts. Toggle the tunnel off and on to retry.")
+                return
+            }
+            log(.notice, .reconnect, "attempt cap reached but failure is a transient network error — continuing to retry at max backoff")
         }
         state = .reconnecting
         let maxBackoff = settings.maxBackoff
-        let backoff = min(maxBackoff, 5.0 * pow(2.0, Double(reconnectAttempt)))
+        let cappedAttempt = min(reconnectAttempt, maxReconnectAttempts)
+        let backoff = min(maxBackoff, 5.0 * pow(2.0, Double(cappedAttempt)))
         nextReconnectAt = Date().addingTimeInterval(backoff)
-        reconnectAttempt += 1
+        if reconnectAttempt < maxReconnectAttempts {
+            reconnectAttempt += 1
+        }
         log(.notice, .reconnect, "scheduling reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(String(format: "%.1f", backoff))s")
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(backoff))
